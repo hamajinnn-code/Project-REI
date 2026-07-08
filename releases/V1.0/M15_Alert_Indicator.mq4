@@ -68,12 +68,16 @@ bool HasEnoughBars(int shift)
 void DeleteIndicatorArrows()
 {
    // 古い判定で出た矢印が残ると確認を誤るため、このインジケーターの矢印だけ削除して再描画する。
+   string legacyPrefix = "M15_ALERT_" + Symbol() + "_M15";
+
    for(int i = ObjectsTotal(0, 0, -1) - 1; i >= 0; i--)
    {
       string name = ObjectName(0, i, 0, -1);
 
       if(StringFind(name, g_objectPrefix + "_BUY_") == 0 ||
-         StringFind(name, g_objectPrefix + "_SELL_") == 0)
+         StringFind(name, g_objectPrefix + "_SELL_") == 0 ||
+         StringFind(name, legacyPrefix + "_BUY_") == 0 ||
+         StringFind(name, legacyPrefix + "_SELL_") == 0)
       {
          ObjectDelete(0, name);
       }
