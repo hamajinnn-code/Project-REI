@@ -1,10 +1,16 @@
 #property strict
 #property indicator_chart_window
-#property indicator_buffers 2
+#property indicator_buffers 5
 #property indicator_color1 C'104,169,178'
 #property indicator_color2 C'205,139,157'
+#property indicator_color3 clrDodgerBlue
+#property indicator_color4 clrGold
+#property indicator_color5 clrSilver
 #property indicator_width1 2
 #property indicator_width2 2
+#property indicator_width3 1
+#property indicator_width4 1
+#property indicator_width5 1
 
 //+------------------------------------------------------------------+
 //| M15_Alert_Indicator                                               |
@@ -16,12 +22,16 @@ input int    HistoricalBars  = 500;
 input bool   EnableAlert     = true;
 input bool   EnablePopup     = true;
 input bool   EnableArrow     = true;
+input bool   ShowDebugEMALines = true;
 input double ArrowOffsetPips = 3.0;
 input color  BuyArrowColor   = C'104,169,178';
 input color  SellArrowColor  = C'205,139,157';
 
 double BuyArrowBuffer[];
 double SellArrowBuffer[];
+double EMA20Buffer[];
+double EMA75Buffer[];
+double EMA200Buffer[];
 
 datetime g_lastBuyAlertBarTime = 0;
 datetime g_lastSellAlertBarTime = 0;
@@ -208,6 +218,8 @@ void PrintBuyBufferDebug(int shift)
          " M15 ema20=", DoubleToString(ema20, Digits),
          " M15 ema75=", DoubleToString(ema75, Digits),
          " M15 ema200=", DoubleToString(ema200, Digits),
+         " ema20>ema75=", BoolText(ema20 > ema75),
+         " ema75>ema200=", BoolText(ema75 > ema200),
          " IsM15BuyAlignment(shift)=", BoolText(IsM15BuyAlignment(shift)),
          " H4 shift=", h4Shift,
          " confirmedH4Shift=", confirmedH4Shift,
@@ -236,6 +248,8 @@ void PrintSellBufferDebug(int shift)
          " M15 ema20=", DoubleToString(ema20, Digits),
          " M15 ema75=", DoubleToString(ema75, Digits),
          " M15 ema200=", DoubleToString(ema200, Digits),
+         " ema20<ema75=", BoolText(ema20 < ema75),
+         " ema75<ema200=", BoolText(ema75 < ema200),
          " IsM15SellAlignment(shift)=", BoolText(IsM15SellAlignment(shift)),
          " H4 shift=", h4Shift,
          " confirmedH4Shift=", confirmedH4Shift,
@@ -281,6 +295,31 @@ void UpdateArrowBuffers(int rates_total)
    // The current candle must never show an arrow in V1.0.
    BuyArrowBuffer[0] = EMPTY_VALUE;
    SellArrowBuffer[0] = EMPTY_VALUE;
+}
+
+void UpdateDebugEMALines(int rates_total)
+{
+   int maxShift = MathMin(HistoricalBars, rates_total - 1);
+   maxShift = MathMin(maxShift, iBars(NULL, PERIOD_M15) - 1);
+
+   if(maxShift < 0)
+      return;
+
+   for(int i = maxShift; i >= 0; i--)
+   {
+      if(ShowDebugEMALines)
+      {
+         EMA20Buffer[i] = GetM15EMA(20, i);
+         EMA75Buffer[i] = GetM15EMA(75, i);
+         EMA200Buffer[i] = GetM15EMA(200, i);
+      }
+      else
+      {
+         EMA20Buffer[i] = EMPTY_VALUE;
+         EMA75Buffer[i] = EMPTY_VALUE;
+         EMA200Buffer[i] = EMPTY_VALUE;
+      }
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -347,18 +386,33 @@ int OnInit()
 
    SetIndexBuffer(0, BuyArrowBuffer);
    SetIndexBuffer(1, SellArrowBuffer);
+   SetIndexBuffer(2, EMA20Buffer);
+   SetIndexBuffer(3, EMA75Buffer);
+   SetIndexBuffer(4, EMA200Buffer);
 
    ArraySetAsSeries(BuyArrowBuffer, true);
    ArraySetAsSeries(SellArrowBuffer, true);
+   ArraySetAsSeries(EMA20Buffer, true);
+   ArraySetAsSeries(EMA75Buffer, true);
+   ArraySetAsSeries(EMA200Buffer, true);
 
    SetIndexStyle(0, DRAW_ARROW, STYLE_SOLID, 2, BuyArrowColor);
    SetIndexStyle(1, DRAW_ARROW, STYLE_SOLID, 2, SellArrowColor);
+   SetIndexStyle(2, ShowDebugEMALines ? DRAW_LINE : DRAW_NONE, STYLE_SOLID, 1, clrDodgerBlue);
+   SetIndexStyle(3, ShowDebugEMALines ? DRAW_LINE : DRAW_NONE, STYLE_SOLID, 1, clrGold);
+   SetIndexStyle(4, ShowDebugEMALines ? DRAW_LINE : DRAW_NONE, STYLE_SOLID, 1, clrSilver);
    SetIndexArrow(0, 233);
    SetIndexArrow(1, 234);
    SetIndexEmptyValue(0, EMPTY_VALUE);
    SetIndexEmptyValue(1, EMPTY_VALUE);
+   SetIndexEmptyValue(2, EMPTY_VALUE);
+   SetIndexEmptyValue(3, EMPTY_VALUE);
+   SetIndexEmptyValue(4, EMPTY_VALUE);
    SetIndexLabel(0, "BUY signal");
    SetIndexLabel(1, "SELL signal");
+   SetIndexLabel(2, "Debug 20EMA");
+   SetIndexLabel(3, "Debug 75EMA");
+   SetIndexLabel(4, "Debug 200EMA");
 
    Print("M15_Alert_Indicator V1.0 rebuild loaded");
    Comment("M15_Alert_Indicator V1.0 rebuild active");
@@ -381,6 +435,10 @@ int OnCalculate(const int rates_total,
 {
    Comment("M15_Alert_Indicator V1.0 rebuild active");
 
+   if(Period() != PERIOD_M15)
+      return(rates_total);
+
+   UpdateDebugEMALines(rates_total);
    UpdateArrowBuffers(rates_total);
    CheckCurrentAlert();
 
