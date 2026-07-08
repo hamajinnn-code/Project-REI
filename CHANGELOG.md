@@ -2,6 +2,10 @@
 
 ## V1.0 rebuild - 2026-07-08
 
+- Added optional debug EMA lines for M15 20EMA, 75EMA, and 200EMA using the same EMA calculation as signal logic.
+- Added `ShowDebugEMALines` input to turn the debug EMA lines on or off.
+- Stopped processing when the chart timeframe is not M15.
+- Added debug output for EMA alignment comparisons when arrows are written to buffers.
 - Changed H4 trend filtering to use the confirmed H4 candle corresponding to each M15 candle.
 - Replaced fixed current H4 `shift=1` checks with `IsH4BuyTrendForM15Shift()` and `IsH4SellTrendForM15Shift()`.
 - Added debug output for H4 shift, confirmed H4 shift, H4 close, and H4 200EMA.
