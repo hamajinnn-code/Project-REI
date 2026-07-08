@@ -50,7 +50,14 @@ bool HasEnoughBars(int shift)
    if(iBars(NULL, PERIOD_M15) <= shift + 205)
       return(false);
 
-   if(iBars(NULL, PERIOD_H4) <= 205)
+   datetime m15Time = iTime(NULL, PERIOD_M15, shift);
+   int h4Shift = iBarShift(NULL, PERIOD_H4, m15Time, false);
+   int confirmedH4Shift = h4Shift + 1;
+
+   if(m15Time <= 0 || h4Shift < 0)
+      return(false);
+
+   if(iBars(NULL, PERIOD_H4) <= confirmedH4Shift + 205)
       return(false);
 
    return(true);
@@ -79,18 +86,48 @@ double GetM15EMA(int period, int shift)
    return iMA(NULL, PERIOD_M15, period, 0, MODE_EMA, PRICE_CLOSE, shift);
 }
 
-bool IsH4BuyTrend()
+int GetH4ShiftForM15Shift(int m15Shift)
 {
-   double h4Close = iClose(NULL, PERIOD_H4, 1);
-   double h4Ema200 = iMA(NULL, PERIOD_H4, 200, 0, MODE_EMA, PRICE_CLOSE, 1);
+   datetime m15Time = iTime(NULL, PERIOD_M15, m15Shift);
+
+   if(m15Time <= 0)
+      return(-1);
+
+   return(iBarShift(NULL, PERIOD_H4, m15Time, false));
+}
+
+int GetConfirmedH4ShiftForM15Shift(int m15Shift)
+{
+   int h4Shift = GetH4ShiftForM15Shift(m15Shift);
+
+   if(h4Shift < 0)
+      return(-1);
+
+   return(h4Shift + 1);
+}
+
+bool IsH4BuyTrendForM15Shift(int m15Shift)
+{
+   int confirmedH4Shift = GetConfirmedH4ShiftForM15Shift(m15Shift);
+
+   if(confirmedH4Shift < 1)
+      return(false);
+
+   double h4Close = iClose(NULL, PERIOD_H4, confirmedH4Shift);
+   double h4Ema200 = iMA(NULL, PERIOD_H4, 200, 0, MODE_EMA, PRICE_CLOSE, confirmedH4Shift);
 
    return(h4Close > h4Ema200);
 }
 
-bool IsH4SellTrend()
+bool IsH4SellTrendForM15Shift(int m15Shift)
 {
-   double h4Close = iClose(NULL, PERIOD_H4, 1);
-   double h4Ema200 = iMA(NULL, PERIOD_H4, 200, 0, MODE_EMA, PRICE_CLOSE, 1);
+   int confirmedH4Shift = GetConfirmedH4ShiftForM15Shift(m15Shift);
+
+   if(confirmedH4Shift < 1)
+      return(false);
+
+   double h4Close = iClose(NULL, PERIOD_H4, confirmedH4Shift);
+   double h4Ema200 = iMA(NULL, PERIOD_H4, 200, 0, MODE_EMA, PRICE_CLOSE, confirmedH4Shift);
 
    return(h4Close < h4Ema200);
 }
@@ -135,7 +172,7 @@ bool IsBuySignal(int shift)
 {
    if(shift <= 0) return(false);
    if(!HasEnoughBars(shift)) return(false);
-   if(!IsH4BuyTrend()) return(false);
+   if(!IsH4BuyTrendForM15Shift(shift)) return(false);
    if(!IsM15BuyAlignment(shift)) return(false);
    if(!IsBuyTouch75EMA(shift)) return(false);
    return(true);
@@ -145,7 +182,7 @@ bool IsSellSignal(int shift)
 {
    if(shift <= 0) return(false);
    if(!HasEnoughBars(shift)) return(false);
-   if(!IsH4SellTrend()) return(false);
+   if(!IsH4SellTrendForM15Shift(shift)) return(false);
    if(!IsM15SellAlignment(shift)) return(false);
    if(!IsSellTouch75EMA(shift)) return(false);
    return(true);
@@ -159,16 +196,24 @@ void PrintBuyBufferDebug(int shift)
    double ema20  = GetM15EMA(20, shift);
    double ema75  = GetM15EMA(75, shift);
    double ema200 = GetM15EMA(200, shift);
-   datetime barTime = iTime(NULL, PERIOD_M15, shift);
+   datetime m15Time = iTime(NULL, PERIOD_M15, shift);
+   int h4Shift = GetH4ShiftForM15Shift(shift);
+   int confirmedH4Shift = GetConfirmedH4ShiftForM15Shift(shift);
+   double h4Close = iClose(NULL, PERIOD_H4, confirmedH4Shift);
+   double h4Ema200 = iMA(NULL, PERIOD_H4, 200, 0, MODE_EMA, PRICE_CLOSE, confirmedH4Shift);
 
    Print("BUY buffer arrow",
-         " shift=", shift,
-         " Time[shift]=", TimeToString(barTime, TIME_DATE | TIME_MINUTES),
-         " ema20=", DoubleToString(ema20, Digits),
-         " ema75=", DoubleToString(ema75, Digits),
-         " ema200=", DoubleToString(ema200, Digits),
-         " IsH4BuyTrend()=", BoolText(IsH4BuyTrend()),
+         " M15 shift=", shift,
+         " M15 time=", TimeToString(m15Time, TIME_DATE | TIME_MINUTES),
+         " M15 ema20=", DoubleToString(ema20, Digits),
+         " M15 ema75=", DoubleToString(ema75, Digits),
+         " M15 ema200=", DoubleToString(ema200, Digits),
          " IsM15BuyAlignment(shift)=", BoolText(IsM15BuyAlignment(shift)),
+         " H4 shift=", h4Shift,
+         " confirmedH4Shift=", confirmedH4Shift,
+         " H4 close=", DoubleToString(h4Close, Digits),
+         " H4 ema200=", DoubleToString(h4Ema200, Digits),
+         " IsH4BuyTrendForM15Shift(shift)=", BoolText(IsH4BuyTrendForM15Shift(shift)),
          " IsBuyTouch75EMA(shift)=", BoolText(IsBuyTouch75EMA(shift)),
          " IsBuySignal(shift)=", BoolText(IsBuySignal(shift)),
          " BuyArrowBuffer[shift]=", DoubleToString(BuyArrowBuffer[shift], Digits));
@@ -179,16 +224,24 @@ void PrintSellBufferDebug(int shift)
    double ema20  = GetM15EMA(20, shift);
    double ema75  = GetM15EMA(75, shift);
    double ema200 = GetM15EMA(200, shift);
-   datetime barTime = iTime(NULL, PERIOD_M15, shift);
+   datetime m15Time = iTime(NULL, PERIOD_M15, shift);
+   int h4Shift = GetH4ShiftForM15Shift(shift);
+   int confirmedH4Shift = GetConfirmedH4ShiftForM15Shift(shift);
+   double h4Close = iClose(NULL, PERIOD_H4, confirmedH4Shift);
+   double h4Ema200 = iMA(NULL, PERIOD_H4, 200, 0, MODE_EMA, PRICE_CLOSE, confirmedH4Shift);
 
    Print("SELL buffer arrow",
-         " shift=", shift,
-         " Time[shift]=", TimeToString(barTime, TIME_DATE | TIME_MINUTES),
-         " ema20=", DoubleToString(ema20, Digits),
-         " ema75=", DoubleToString(ema75, Digits),
-         " ema200=", DoubleToString(ema200, Digits),
-         " IsH4SellTrend()=", BoolText(IsH4SellTrend()),
+         " M15 shift=", shift,
+         " M15 time=", TimeToString(m15Time, TIME_DATE | TIME_MINUTES),
+         " M15 ema20=", DoubleToString(ema20, Digits),
+         " M15 ema75=", DoubleToString(ema75, Digits),
+         " M15 ema200=", DoubleToString(ema200, Digits),
          " IsM15SellAlignment(shift)=", BoolText(IsM15SellAlignment(shift)),
+         " H4 shift=", h4Shift,
+         " confirmedH4Shift=", confirmedH4Shift,
+         " H4 close=", DoubleToString(h4Close, Digits),
+         " H4 ema200=", DoubleToString(h4Ema200, Digits),
+         " IsH4SellTrendForM15Shift(shift)=", BoolText(IsH4SellTrendForM15Shift(shift)),
          " IsSellTouch75EMA(shift)=", BoolText(IsSellTouch75EMA(shift)),
          " IsSellSignal(shift)=", BoolText(IsSellSignal(shift)),
          " SellArrowBuffer[shift]=", DoubleToString(SellArrowBuffer[shift], Digits));
@@ -248,12 +301,12 @@ void CheckCurrentAlert()
    double highPrice = iHigh(NULL, PERIOD_M15, 0);
    double currentPrice = Bid;
 
-   bool buyAlert = IsH4BuyTrend()
+   bool buyAlert = IsH4BuyTrendForM15Shift(0)
                    && IsM15BuyAlignment(0)
                    && lowPrice <= ema75
                    && currentPrice >= ema75;
 
-   bool sellAlert = IsH4SellTrend()
+   bool sellAlert = IsH4SellTrendForM15Shift(0)
                     && IsM15SellAlignment(0)
                     && highPrice >= ema75
                     && currentPrice <= ema75;
