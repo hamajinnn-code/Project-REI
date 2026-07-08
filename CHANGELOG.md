@@ -2,6 +2,10 @@
 
 ## V1.0 rebuild - 2026-07-08
 
+- Switched V1.0 arrow drawing from `ObjectCreate()` objects to indicator buffers.
+- Added `BuyArrowBuffer` and `SellArrowBuffer` with `SetIndexBuffer()`.
+- Cleared arrow buffers with `EMPTY_VALUE` before each signal check.
+- Wrote buffer values only when `IsBuySignal(shift)` or `IsSellSignal(shift)` returns true.
 - Rebuilt `M15_Alert_Indicator.mq4` as a simple V1.0 indicator.
 - Recreated arrow drawing, historical scanning, and current alert logic.
 - Unified all arrow decisions through `IsBuySignal(shift)` and `IsSellSignal(shift)`.
