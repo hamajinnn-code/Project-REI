@@ -1,10 +1,15 @@
 #property strict
 #property indicator_chart_window
+#property indicator_buffers 2
+#property indicator_color1 C'104,169,178'
+#property indicator_color2 C'205,139,157'
+#property indicator_width1 2
+#property indicator_width2 2
 
 //+------------------------------------------------------------------+
 //| M15_Alert_Indicator                                               |
 //| V1.0: H4 200EMA + M15 EMA alignment + 75EMA touch                 |
-//| Platform: MetaTrader 4 / MQL4 build 1470                          |
+//| Drawing method: indicator buffers only                            |
 //+------------------------------------------------------------------+
 
 input int    HistoricalBars  = 500;
@@ -15,10 +20,11 @@ input double ArrowOffsetPips = 3.0;
 input color  BuyArrowColor   = C'104,169,178';
 input color  SellArrowColor  = C'205,139,157';
 
-string   g_objectPrefix = "";
+double BuyArrowBuffer[];
+double SellArrowBuffer[];
+
 datetime g_lastBuyAlertBarTime = 0;
 datetime g_lastSellAlertBarTime = 0;
-datetime g_lastCheckedClosedBarTime = 0;
 
 //+------------------------------------------------------------------+
 //| Utility                                                           |
@@ -39,21 +45,6 @@ string BoolText(bool value)
    return("false");
 }
 
-string TimeKey(datetime barTime)
-{
-   string key = TimeToString(barTime, TIME_DATE | TIME_MINUTES);
-   StringReplace(key, ".", "");
-   StringReplace(key, ":", "");
-   StringReplace(key, " ", "_");
-   return(key);
-}
-
-string ArrowName(string side, int shift)
-{
-   datetime barTime = iTime(NULL, PERIOD_M15, shift);
-   return(g_objectPrefix + "_" + side + "_" + TimeKey(barTime));
-}
-
 bool HasEnoughBars(int shift)
 {
    if(iBars(NULL, PERIOD_M15) <= shift + 205)
@@ -65,20 +56,15 @@ bool HasEnoughBars(int shift)
    return(true);
 }
 
-void DeleteIndicatorArrows()
+void DeleteLegacyArrowObjects()
 {
-   // 古い判定で出た矢印が残ると確認を誤るため、このインジケーターの矢印だけ削除して再描画する。
-   string legacyPrefix = "M15_ALERT_" + Symbol() + "_M15";
-
+   // V1.0 is buffer-only. Old object arrows can make it look like logic has not changed.
    for(int i = ObjectsTotal(0, 0, -1) - 1; i >= 0; i--)
    {
       string name = ObjectName(0, i, 0, -1);
 
-      if(StringFind(name, g_objectPrefix + "_BUY_") == 0 ||
-         StringFind(name, g_objectPrefix + "_SELL_") == 0 ||
-         StringFind(name, legacyPrefix + "_BUY_") == 0 ||
-         StringFind(name, legacyPrefix + "_SELL_") == 0 ||
-         StringFind(name, "M15_Alert_Indicator") >= 0)
+      if(StringFind(name, "M15_Alert_Indicator") >= 0 ||
+         StringFind(name, "M15_ALERT_") >= 0)
       {
          ObjectDelete(0, name);
       }
@@ -86,7 +72,7 @@ void DeleteIndicatorArrows()
 }
 
 //+------------------------------------------------------------------+
-//| Required signal functions                                         |
+//| Signal functions                                                   |
 //+------------------------------------------------------------------+
 double GetM15EMA(int period, int shift)
 {
@@ -148,6 +134,7 @@ bool IsSellTouch75EMA(int shift)
 bool IsBuySignal(int shift)
 {
    if(shift <= 0) return(false);
+   if(!HasEnoughBars(shift)) return(false);
    if(!IsH4BuyTrend()) return(false);
    if(!IsM15BuyAlignment(shift)) return(false);
    if(!IsBuyTouch75EMA(shift)) return(false);
@@ -157,6 +144,7 @@ bool IsBuySignal(int shift)
 bool IsSellSignal(int shift)
 {
    if(shift <= 0) return(false);
+   if(!HasEnoughBars(shift)) return(false);
    if(!IsH4SellTrend()) return(false);
    if(!IsM15SellAlignment(shift)) return(false);
    if(!IsSellTouch75EMA(shift)) return(false);
@@ -164,129 +152,87 @@ bool IsSellSignal(int shift)
 }
 
 //+------------------------------------------------------------------+
-//| Debug                                                            |
+//| Debug                                                             |
 //+------------------------------------------------------------------+
-void PrintSignalDebug(string side, int shift)
+void PrintBuyBufferDebug(int shift)
 {
    double ema20  = GetM15EMA(20, shift);
    double ema75  = GetM15EMA(75, shift);
    double ema200 = GetM15EMA(200, shift);
    datetime barTime = iTime(NULL, PERIOD_M15, shift);
 
-   bool h4Trend = false;
-   bool alignment = false;
-   bool touch = false;
-   bool signal = false;
-
-   if(side == "BUY")
-   {
-      h4Trend = IsH4BuyTrend();
-      alignment = IsM15BuyAlignment(shift);
-      touch = IsBuyTouch75EMA(shift);
-      signal = IsBuySignal(shift);
-   }
-   else
-   {
-      h4Trend = IsH4SellTrend();
-      alignment = IsM15SellAlignment(shift);
-      touch = IsSellTouch75EMA(shift);
-      signal = IsSellSignal(shift);
-   }
-
-   Print(side,
+   Print("BUY buffer arrow",
          " shift=", shift,
          " Time[shift]=", TimeToString(barTime, TIME_DATE | TIME_MINUTES),
          " ema20=", DoubleToString(ema20, Digits),
          " ema75=", DoubleToString(ema75, Digits),
          " ema200=", DoubleToString(ema200, Digits),
-         " H4 trend=", BoolText(h4Trend),
-         " M15 alignment=", BoolText(alignment),
-         " 75EMA touch=", BoolText(touch),
-         " signal=", BoolText(signal));
+         " IsH4BuyTrend()=", BoolText(IsH4BuyTrend()),
+         " IsM15BuyAlignment(shift)=", BoolText(IsM15BuyAlignment(shift)),
+         " IsBuyTouch75EMA(shift)=", BoolText(IsBuyTouch75EMA(shift)),
+         " IsBuySignal(shift)=", BoolText(IsBuySignal(shift)),
+         " BuyArrowBuffer[shift]=", DoubleToString(BuyArrowBuffer[shift], Digits));
 }
 
-//+------------------------------------------------------------------+
-//| Drawing                                                           |
-//+------------------------------------------------------------------+
-void DrawBuyArrow(int shift)
+void PrintSellBufferDebug(int shift)
 {
-   // 矢印表示はIsBuySignalの結果だけで行う。75EMAタッチ単体では絶対に描画しない。
-   if(!EnableArrow)
-      return;
-
-   if(!IsBuySignal(shift))
-      return;
-
-   string name = ArrowName("BUY", shift);
-
-   if(ObjectFind(0, name) >= 0)
-      return;
-
-   PrintSignalDebug("BUY", shift);
-
+   double ema20  = GetM15EMA(20, shift);
+   double ema75  = GetM15EMA(75, shift);
+   double ema200 = GetM15EMA(200, shift);
    datetime barTime = iTime(NULL, PERIOD_M15, shift);
-   double price = iLow(NULL, PERIOD_M15, shift) - ArrowOffsetPips * PipPoint();
 
-   ObjectCreate(0, name, OBJ_ARROW, 0, barTime, price);
-   ObjectSetInteger(0, name, OBJPROP_ARROWCODE, 233);
-   ObjectSetInteger(0, name, OBJPROP_COLOR, BuyArrowColor);
-   ObjectSetInteger(0, name, OBJPROP_WIDTH, 2);
-   ObjectSetInteger(0, name, OBJPROP_BACK, false);
-   ObjectSetString(0, name, OBJPROP_TOOLTIP, "BUY M15 EMA alignment + 75EMA touch");
-}
-
-void DrawSellArrow(int shift)
-{
-   // 矢印表示はIsSellSignalの結果だけで行う。75EMAタッチ単体では絶対に描画しない。
-   if(!EnableArrow)
-      return;
-
-   if(!IsSellSignal(shift))
-      return;
-
-   string name = ArrowName("SELL", shift);
-
-   if(ObjectFind(0, name) >= 0)
-      return;
-
-   PrintSignalDebug("SELL", shift);
-
-   datetime barTime = iTime(NULL, PERIOD_M15, shift);
-   double price = iHigh(NULL, PERIOD_M15, shift) + ArrowOffsetPips * PipPoint();
-
-   ObjectCreate(0, name, OBJ_ARROW, 0, barTime, price);
-   ObjectSetInteger(0, name, OBJPROP_ARROWCODE, 234);
-   ObjectSetInteger(0, name, OBJPROP_COLOR, SellArrowColor);
-   ObjectSetInteger(0, name, OBJPROP_WIDTH, 2);
-   ObjectSetInteger(0, name, OBJPROP_BACK, false);
-   ObjectSetString(0, name, OBJPROP_TOOLTIP, "SELL M15 EMA alignment + 75EMA touch");
+   Print("SELL buffer arrow",
+         " shift=", shift,
+         " Time[shift]=", TimeToString(barTime, TIME_DATE | TIME_MINUTES),
+         " ema20=", DoubleToString(ema20, Digits),
+         " ema75=", DoubleToString(ema75, Digits),
+         " ema200=", DoubleToString(ema200, Digits),
+         " IsH4SellTrend()=", BoolText(IsH4SellTrend()),
+         " IsM15SellAlignment(shift)=", BoolText(IsM15SellAlignment(shift)),
+         " IsSellTouch75EMA(shift)=", BoolText(IsSellTouch75EMA(shift)),
+         " IsSellSignal(shift)=", BoolText(IsSellSignal(shift)),
+         " SellArrowBuffer[shift]=", DoubleToString(SellArrowBuffer[shift], Digits));
 }
 
 //+------------------------------------------------------------------+
-//| Scan and alert                                                     |
+//| Buffer drawing                                                     |
 //+------------------------------------------------------------------+
-void ScanHistoricalBars()
+void UpdateArrowBuffers(int rates_total)
 {
-   int bars = iBars(NULL, PERIOD_M15);
-   int lastShift = MathMin(HistoricalBars, bars - 205);
+   int maxShift = MathMin(HistoricalBars, rates_total - 1);
+   maxShift = MathMin(maxShift, iBars(NULL, PERIOD_M15) - 205);
 
-   if(lastShift < 1)
+   if(maxShift < 1)
       return;
 
-   for(int shift = lastShift; shift >= 1; shift--)
+   double arrowOffset = ArrowOffsetPips * PipPoint();
+   int start = maxShift;
+
+   for(int i = start; i >= 1; i--)
    {
-      // 過去スキャンもリアルタイム確定足も同じIsBuySignal/IsSellSignalだけを使う。
-      if(IsBuySignal(shift))
-      {
-         DrawBuyArrow(shift);
-         continue;
-      }
+      BuyArrowBuffer[i] = EMPTY_VALUE;
+      SellArrowBuffer[i] = EMPTY_VALUE;
 
-      if(IsSellSignal(shift))
-         DrawSellArrow(shift);
+      if(EnableArrow && IsBuySignal(i))
+      {
+         BuyArrowBuffer[i] = Low[i] - arrowOffset;
+         PrintBuyBufferDebug(i);
+      }
+      else if(EnableArrow && IsSellSignal(i))
+      {
+         SellArrowBuffer[i] = High[i] + arrowOffset;
+         PrintSellBufferDebug(i);
+      }
    }
+
+   // The current candle must never show an arrow in V1.0.
+   BuyArrowBuffer[0] = EMPTY_VALUE;
+   SellArrowBuffer[0] = EMPTY_VALUE;
 }
 
+//+------------------------------------------------------------------+
+//| Alert                                                             |
+//+------------------------------------------------------------------+
 void CheckCurrentAlert()
 {
    if(!EnableAlert && !EnablePopup)
@@ -302,7 +248,6 @@ void CheckCurrentAlert()
    double highPrice = iHigh(NULL, PERIOD_M15, 0);
    double currentPrice = Bid;
 
-   // アラートだけは未確定足を監視する。矢印はIsBuySignal/IsSellSignalによりshift=0では出ない。
    bool buyAlert = IsH4BuyTrend()
                    && IsM15BuyAlignment(0)
                    && lowPrice <= ema75
@@ -340,38 +285,32 @@ void CheckCurrentAlert()
    }
 }
 
-void CheckClosedBar()
-{
-   datetime closedBarTime = iTime(NULL, PERIOD_M15, 1);
-
-   if(closedBarTime <= 0 || closedBarTime == g_lastCheckedClosedBarTime)
-      return;
-
-   g_lastCheckedClosedBarTime = closedBarTime;
-
-   if(IsBuySignal(1))
-   {
-      DrawBuyArrow(1);
-      return;
-   }
-
-   if(IsSellSignal(1))
-      DrawSellArrow(1);
-}
-
 //+------------------------------------------------------------------+
 //| MT4 events                                                        |
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   g_objectPrefix = "M15_ALERT_V10_" + Symbol();
+   IndicatorShortName("M15 Alert Indicator V1.0 buffer");
 
-   IndicatorShortName("M15 Alert Indicator V1.0");
+   SetIndexBuffer(0, BuyArrowBuffer);
+   SetIndexBuffer(1, SellArrowBuffer);
+
+   ArraySetAsSeries(BuyArrowBuffer, true);
+   ArraySetAsSeries(SellArrowBuffer, true);
+
+   SetIndexStyle(0, DRAW_ARROW, STYLE_SOLID, 2, BuyArrowColor);
+   SetIndexStyle(1, DRAW_ARROW, STYLE_SOLID, 2, SellArrowColor);
+   SetIndexArrow(0, 233);
+   SetIndexArrow(1, 234);
+   SetIndexEmptyValue(0, EMPTY_VALUE);
+   SetIndexEmptyValue(1, EMPTY_VALUE);
+   SetIndexLabel(0, "BUY signal");
+   SetIndexLabel(1, "SELL signal");
+
    Print("M15_Alert_Indicator V1.0 rebuild loaded");
    Comment("M15_Alert_Indicator V1.0 rebuild active");
 
-   DeleteIndicatorArrows();
-   ScanHistoricalBars();
+   DeleteLegacyArrowObjects();
 
    return(INIT_SUCCEEDED);
 }
@@ -389,8 +328,8 @@ int OnCalculate(const int rates_total,
 {
    Comment("M15_Alert_Indicator V1.0 rebuild active");
 
+   UpdateArrowBuffers(rates_total);
    CheckCurrentAlert();
-   CheckClosedBar();
 
    return(rates_total);
 }
