@@ -77,7 +77,8 @@ void DeleteIndicatorArrows()
       if(StringFind(name, g_objectPrefix + "_BUY_") == 0 ||
          StringFind(name, g_objectPrefix + "_SELL_") == 0 ||
          StringFind(name, legacyPrefix + "_BUY_") == 0 ||
-         StringFind(name, legacyPrefix + "_SELL_") == 0)
+         StringFind(name, legacyPrefix + "_SELL_") == 0 ||
+         StringFind(name, "M15_Alert_Indicator") >= 0)
       {
          ObjectDelete(0, name);
       }
@@ -366,6 +367,8 @@ int OnInit()
    g_objectPrefix = "M15_ALERT_V10_" + Symbol();
 
    IndicatorShortName("M15 Alert Indicator V1.0");
+   Print("M15_Alert_Indicator V1.0 rebuild loaded");
+   Comment("M15_Alert_Indicator V1.0 rebuild active");
 
    DeleteIndicatorArrows();
    ScanHistoricalBars();
@@ -384,6 +387,8 @@ int OnCalculate(const int rates_total,
                 const long &volume[],
                 const int &spread[])
 {
+   Comment("M15_Alert_Indicator V1.0 rebuild active");
+
    CheckCurrentAlert();
    CheckClosedBar();
 
@@ -392,4 +397,5 @@ int OnCalculate(const int rates_total,
 
 void OnDeinit(const int reason)
 {
+   Comment("");
 }
