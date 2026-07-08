@@ -1,0 +1,20 @@
+# MetaTrader generated files
+*.ex4
+*.log
+*.tmp
+*.bak
+
+# MetaTrader local/test output
+tester/
+logs/
+MQL4/Logs/
+MQL4/Files/
+
+# Editor and OS files
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+
+# Local-only notes
+*.local.*
