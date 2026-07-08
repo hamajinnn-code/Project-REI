@@ -2,6 +2,9 @@
 
 ## V1.0 rebuild - 2026-07-08
 
+- Changed H4 trend filtering to use the confirmed H4 candle corresponding to each M15 candle.
+- Replaced fixed current H4 `shift=1` checks with `IsH4BuyTrendForM15Shift()` and `IsH4SellTrendForM15Shift()`.
+- Added debug output for H4 shift, confirmed H4 shift, H4 close, and H4 200EMA.
 - Switched V1.0 arrow drawing from `ObjectCreate()` objects to indicator buffers.
 - Added `BuyArrowBuffer` and `SellArrowBuffer` with `SetIndexBuffer()`.
 - Cleared arrow buffers with `EMPTY_VALUE` before each signal check.
