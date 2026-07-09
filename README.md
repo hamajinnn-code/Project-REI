@@ -9,11 +9,11 @@ MT4 / MQL4 indicator project for testing a simple H4 trend and M15 pullback aler
 - Platform: MetaTrader 4
 - Main timeframe: M15
 - Higher timeframe: H4
-- Current version: V1.2
+- Current version: V1.2 revised
 
-## V1.2 Scope
+## V1.2 Revised Scope
 
-V1.2 keeps the V1.1 entry logic and adds practical filters that can block low-quality entries. It still only displays arrows and alerts. It does not add SL/TP lines, lot calculation, or EA execution.
+V1.2 revised keeps the V1.1 entry logic and uses only lightweight session/news filters. It still only displays arrows and alerts. It does not add SL/TP lines, lot calculation, or EA execution.
 
 BUY conditions:
 
@@ -33,13 +33,16 @@ SELL conditions:
 - The confirmed M15 candle is bearish.
 - Only one SELL arrow is shown for the same pullback until price clearly returns below 20EMA.
 
-Additional V1.2 filters:
+Active V1.2 revised filters:
 
-- London session filter based on server time.
-- Manual news avoid filter using `NewsTimes`.
-- Tokyo range filter that blocks days where the Tokyo range is too wide.
-- H4 reversal candle filter using engulfing candles and pin bars.
-- Every V1.2 filter can be turned on or off with input settings.
+- London session filter. It can be judged by converted JST time or by broker server time.
+- Summer/winter London session presets for JST mode.
+- Manual news avoid filter using `NewsTimes`. This is optional and defaults to OFF.
+
+Removed from core signal conditions:
+
+- Tokyo range filter.
+- H4 reversal candle filter.
 
 ## Backtest Scan
 
