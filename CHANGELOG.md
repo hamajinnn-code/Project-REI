@@ -1,5 +1,18 @@
 # Changelog
 
+## V1.1 - 2026-07-09
+
+- Added `SlopeLookback` input with default value `5`.
+- Added M15 20EMA and 75EMA slope filters.
+- Changed touch logic from 75EMA-only to 20EMA or 75EMA pullback touch.
+- Added bullish confirmed candle requirement for BUY arrows.
+- Added bearish confirmed candle requirement for SELL arrows.
+- Changed duplicate prevention to one arrow per pullback/retracement.
+- BUY suppression now resets only after price clearly closes and stays above 20EMA.
+- SELL suppression now resets only after price clearly closes and stays below 20EMA.
+- Updated current-candle alerts to use V1.1 pullback touch and slope conditions.
+- Added `releases/V1.1/M15_Alert_Indicator.mq4`.
+
 ## V1.0 rebuild - 2026-07-08
 
 - Increased default `HistoricalBars` to 5000 for deeper historical review.
