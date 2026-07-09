@@ -14,7 +14,7 @@
 
 //+------------------------------------------------------------------+
 //| M15_Alert_Indicator                                               |
-//| V1.1: H4 trend + M15 EMA slope + 20/75EMA pullback touch          |
+//| V1.2: Practical filters for M15 pullback entries                  |
 //| Drawing method: indicator buffers only                            |
 //+------------------------------------------------------------------+
 
@@ -27,6 +27,21 @@ input bool   ShowDebugEMALines = true;
 input double ArrowOffsetPips = 3.0;
 input color  BuyArrowColor   = C'104,169,178';
 input color  SellArrowColor  = C'205,139,157';
+input bool   EnableLondonTimeFilter = true;
+input int    LondonStartHour = 15;
+input int    LondonEndHour = 22;
+input bool   EnableNewsFilter = true;
+input string NewsTimes = "";
+input int    NewsAvoidMinutesBefore = 30;
+input int    NewsAvoidMinutesAfter = 30;
+input bool   EnableTokyoRangeFilter = true;
+input int    TokyoStartHour = 0;
+input int    TokyoEndHour = 9;
+input double MaxTokyoRangePips = 40.0;
+input bool   EnableH4ReversalPatternFilter = true;
+input int    H4ReversalLookback = 10;
+input double PinbarWickRatio = 2.0;
+input double PinbarBodyMaxRatio = 0.35;
 
 double BuyArrowBuffer[];
 double SellArrowBuffer[];
@@ -68,6 +83,14 @@ int GetSlopeLookback()
    return(SlopeLookback);
 }
 
+int GetH4ReversalLookback()
+{
+   if(H4ReversalLookback < 1)
+      return(1);
+
+   return(H4ReversalLookback);
+}
+
 //+------------------------------------------------------------------+
 //| Utility                                                           |
 //+------------------------------------------------------------------+
@@ -85,6 +108,24 @@ string BoolText(bool value)
       return("true");
 
    return("false");
+}
+
+string OnOffText(bool value)
+{
+   if(value)
+      return("ON");
+
+   return("OFF");
+}
+
+string DateText(datetime value)
+{
+   return(StringFormat("%04d.%02d.%02d", TimeYear(value), TimeMonth(value), TimeDay(value)));
+}
+
+datetime BuildDayTime(datetime baseTime, int hour)
+{
+   return(StrToTime(DateText(baseTime) + " " + StringFormat("%02d:00", hour)));
 }
 
 bool HasEnoughBars(int shift)
@@ -105,7 +146,13 @@ bool HasEnoughBars(int shift)
    if(m15Time <= 0 || h4Shift < 0)
       return(false);
 
-   if(iBars(NULL, PERIOD_H4) <= confirmedH4Shift + 205)
+   int requiredH4Bars = 205;
+   int reversalBars = GetH4ReversalLookback() + 3;
+
+   if(reversalBars > requiredH4Bars)
+      requiredH4Bars = reversalBars;
+
+   if(iBars(NULL, PERIOD_H4) <= confirmedH4Shift + requiredH4Bars)
       return(false);
 
    return(true);
@@ -270,15 +317,255 @@ bool IsSellPullbackReset(int shift)
           iHigh(NULL, PERIOD_M15, shift) < ema20);
 }
 
+bool IsM15BuySlopeUp(int shift)
+{
+   return(IsM15BuySlope(shift));
+}
+
+bool IsM15SellSlopeDown(int shift)
+{
+   return(IsM15SellSlope(shift));
+}
+
+bool IsLondonSession(int shift)
+{
+   datetime barTime = iTime(NULL, PERIOD_M15, shift);
+
+   if(barTime <= 0)
+      return(false);
+
+   int hour = TimeHour(barTime);
+
+   if(LondonStartHour == LondonEndHour)
+      return(true);
+
+   if(LondonStartHour < LondonEndHour)
+      return(hour >= LondonStartHour && hour < LondonEndHour);
+
+   return(hour >= LondonStartHour || hour < LondonEndHour);
+}
+
+bool IsNewsAvoidTime(int shift)
+{
+   if(StringLen(NewsTimes) <= 0)
+      return(false);
+
+   datetime barTime = iTime(NULL, PERIOD_M15, shift);
+
+   if(barTime <= 0)
+      return(false);
+
+   string items[];
+   int count = StringSplit(NewsTimes, ';', items);
+
+   for(int i = 0; i < count; i++)
+   {
+      string item = StringTrimLeft(StringTrimRight(items[i]));
+
+      if(StringLen(item) <= 0)
+         continue;
+
+      datetime newsTime = StrToTime(item);
+
+      if(newsTime <= 0)
+         continue;
+
+      datetime avoidStart = newsTime - NewsAvoidMinutesBefore * 60;
+      datetime avoidEnd = newsTime + NewsAvoidMinutesAfter * 60;
+
+      if(barTime >= avoidStart && barTime <= avoidEnd)
+         return(true);
+   }
+
+   return(false);
+}
+
+double GetTokyoRangePips(int shift)
+{
+   datetime barTime = iTime(NULL, PERIOD_M15, shift);
+
+   if(barTime <= 0)
+      return(0.0);
+
+   datetime tokyoStart = BuildDayTime(barTime, TokyoStartHour);
+   datetime tokyoEnd = BuildDayTime(barTime, TokyoEndHour);
+
+   if(TokyoEndHour <= TokyoStartHour)
+      tokyoEnd += 86400;
+
+   int startShift = iBarShift(NULL, PERIOD_M15, tokyoStart, false);
+   int endShift = iBarShift(NULL, PERIOD_M15, tokyoEnd, false);
+
+   if(startShift < 0 || endShift < 0)
+      return(0.0);
+
+   int olderShift = startShift;
+   int newerShift = endShift;
+
+   if(endShift > olderShift)
+      olderShift = endShift;
+
+   if(startShift < newerShift)
+      newerShift = startShift;
+   double tokyoHigh = -1.0;
+   double tokyoLow = -1.0;
+
+   for(int i = olderShift; i >= newerShift; i--)
+   {
+      datetime checkTime = iTime(NULL, PERIOD_M15, i);
+
+      if(checkTime >= tokyoStart && checkTime < tokyoEnd)
+      {
+         double highPrice = iHigh(NULL, PERIOD_M15, i);
+         double lowPrice = iLow(NULL, PERIOD_M15, i);
+
+         if(tokyoHigh < 0.0 || highPrice > tokyoHigh)
+            tokyoHigh = highPrice;
+
+         if(tokyoLow < 0.0 || lowPrice < tokyoLow)
+            tokyoLow = lowPrice;
+      }
+   }
+
+   if(tokyoHigh < 0.0 || tokyoLow < 0.0)
+      return(0.0);
+
+   return((tokyoHigh - tokyoLow) / PipPoint());
+}
+
+bool IsTokyoRangeAllowed(int shift)
+{
+   double rangePips = GetTokyoRangePips(shift);
+
+   if(rangePips <= 0.0)
+      return(true);
+
+   return(rangePips <= MaxTokyoRangePips);
+}
+
+bool IsBullishEngulfingH4(int h4Shift)
+{
+   int previousShift = h4Shift + 1;
+   double openNow = iOpen(NULL, PERIOD_H4, h4Shift);
+   double closeNow = iClose(NULL, PERIOD_H4, h4Shift);
+   double openPrev = iOpen(NULL, PERIOD_H4, previousShift);
+   double closePrev = iClose(NULL, PERIOD_H4, previousShift);
+
+   return(closeNow > openNow &&
+          closePrev < openPrev &&
+          closeNow > openPrev &&
+          openNow < closePrev);
+}
+
+bool IsBearishEngulfingH4(int h4Shift)
+{
+   int previousShift = h4Shift + 1;
+   double openNow = iOpen(NULL, PERIOD_H4, h4Shift);
+   double closeNow = iClose(NULL, PERIOD_H4, h4Shift);
+   double openPrev = iOpen(NULL, PERIOD_H4, previousShift);
+   double closePrev = iClose(NULL, PERIOD_H4, previousShift);
+
+   return(closeNow < openNow &&
+          closePrev > openPrev &&
+          closeNow < openPrev &&
+          openNow > closePrev);
+}
+
+bool IsBullishPinbarH4(int h4Shift)
+{
+   double openPrice = iOpen(NULL, PERIOD_H4, h4Shift);
+   double closePrice = iClose(NULL, PERIOD_H4, h4Shift);
+   double highPrice = iHigh(NULL, PERIOD_H4, h4Shift);
+   double lowPrice = iLow(NULL, PERIOD_H4, h4Shift);
+   double body = MathAbs(closePrice - openPrice);
+   double range = highPrice - lowPrice;
+
+   if(range <= 0.0)
+      return(false);
+
+   if(body < Point)
+      body = Point;
+
+   double upperWick = highPrice - MathMax(openPrice, closePrice);
+   double lowerWick = MathMin(openPrice, closePrice) - lowPrice;
+
+   return(lowerWick >= body * PinbarWickRatio &&
+          upperWick <= body &&
+          body <= range * PinbarBodyMaxRatio);
+}
+
+bool IsBearishPinbarH4(int h4Shift)
+{
+   double openPrice = iOpen(NULL, PERIOD_H4, h4Shift);
+   double closePrice = iClose(NULL, PERIOD_H4, h4Shift);
+   double highPrice = iHigh(NULL, PERIOD_H4, h4Shift);
+   double lowPrice = iLow(NULL, PERIOD_H4, h4Shift);
+   double body = MathAbs(closePrice - openPrice);
+   double range = highPrice - lowPrice;
+
+   if(range <= 0.0)
+      return(false);
+
+   if(body < Point)
+      body = Point;
+
+   double upperWick = highPrice - MathMax(openPrice, closePrice);
+   double lowerWick = MathMin(openPrice, closePrice) - lowPrice;
+
+   return(upperWick >= body * PinbarWickRatio &&
+          lowerWick <= body &&
+          body <= range * PinbarBodyMaxRatio);
+}
+
+bool HasRecentH4BullishReversal(int m15Shift)
+{
+   int confirmedH4Shift = GetConfirmedH4ShiftForM15Shift(m15Shift);
+
+   if(confirmedH4Shift < 1)
+      return(false);
+
+   int lookback = GetH4ReversalLookback();
+
+   for(int i = confirmedH4Shift; i < confirmedH4Shift + lookback; i++)
+   {
+      if(IsBullishEngulfingH4(i) || IsBullishPinbarH4(i))
+         return(true);
+   }
+
+   return(false);
+}
+
+bool HasRecentH4BearishReversal(int m15Shift)
+{
+   int confirmedH4Shift = GetConfirmedH4ShiftForM15Shift(m15Shift);
+
+   if(confirmedH4Shift < 1)
+      return(false);
+
+   int lookback = GetH4ReversalLookback();
+
+   for(int i = confirmedH4Shift; i < confirmedH4Shift + lookback; i++)
+   {
+      if(IsBearishEngulfingH4(i) || IsBearishPinbarH4(i))
+         return(true);
+   }
+
+   return(false);
+}
+
 bool IsBuySignal(int shift)
 {
    if(shift <= 0) return(false);
    if(!HasEnoughBars(shift)) return(false);
    if(!IsH4BuyTrendForM15Shift(shift)) return(false);
    if(!IsM15BuyAlignment(shift)) return(false);
-   if(!IsM15BuySlope(shift)) return(false);
+   if(!IsM15BuySlopeUp(shift)) return(false);
    if(!IsBuyTouch20Or75EMA(shift)) return(false);
    if(!IsBullishCandle(shift)) return(false);
+   if(EnableLondonTimeFilter && !IsLondonSession(shift)) return(false);
+   if(EnableNewsFilter && IsNewsAvoidTime(shift)) return(false);
+   if(EnableTokyoRangeFilter && !IsTokyoRangeAllowed(shift)) return(false);
+   if(EnableH4ReversalPatternFilter && !HasRecentH4BullishReversal(shift)) return(false);
    return(true);
 }
 
@@ -288,9 +575,13 @@ bool IsSellSignal(int shift)
    if(!HasEnoughBars(shift)) return(false);
    if(!IsH4SellTrendForM15Shift(shift)) return(false);
    if(!IsM15SellAlignment(shift)) return(false);
-   if(!IsM15SellSlope(shift)) return(false);
+   if(!IsM15SellSlopeDown(shift)) return(false);
    if(!IsSellTouch20Or75EMA(shift)) return(false);
    if(!IsBearishCandle(shift)) return(false);
+   if(EnableLondonTimeFilter && !IsLondonSession(shift)) return(false);
+   if(EnableNewsFilter && IsNewsAvoidTime(shift)) return(false);
+   if(EnableTokyoRangeFilter && !IsTokyoRangeAllowed(shift)) return(false);
+   if(EnableH4ReversalPatternFilter && !HasRecentH4BearishReversal(shift)) return(false);
    return(true);
 }
 
@@ -322,9 +613,13 @@ void PrintBuyBufferDebug(int shift)
          " H4 close=", DoubleToString(h4Close, Digits),
          " H4 ema200=", DoubleToString(h4Ema200, Digits),
          " IsH4BuyTrendForM15Shift(shift)=", BoolText(IsH4BuyTrendForM15Shift(shift)),
-         " IsM15BuySlope(shift)=", BoolText(IsM15BuySlope(shift)),
+         " IsM15BuySlopeUp(shift)=", BoolText(IsM15BuySlopeUp(shift)),
          " IsBuyTouch20Or75EMA(shift)=", BoolText(IsBuyTouch20Or75EMA(shift)),
          " IsBullishCandle(shift)=", BoolText(IsBullishCandle(shift)),
+         " IsLondonSession(shift)=", BoolText(IsLondonSession(shift)),
+         " IsNewsAvoidTime(shift)=", BoolText(IsNewsAvoidTime(shift)),
+         " IsTokyoRangeAllowed(shift)=", BoolText(IsTokyoRangeAllowed(shift)),
+         " HasRecentH4BullishReversal(shift)=", BoolText(HasRecentH4BullishReversal(shift)),
          " IsBuySignal(shift)=", BoolText(IsBuySignal(shift)),
          " BuyArrowBuffer[shift]=", DoubleToString(BuyArrowBuffer[shift], Digits));
 }
@@ -354,9 +649,13 @@ void PrintSellBufferDebug(int shift)
          " H4 close=", DoubleToString(h4Close, Digits),
          " H4 ema200=", DoubleToString(h4Ema200, Digits),
          " IsH4SellTrendForM15Shift(shift)=", BoolText(IsH4SellTrendForM15Shift(shift)),
-         " IsM15SellSlope(shift)=", BoolText(IsM15SellSlope(shift)),
+         " IsM15SellSlopeDown(shift)=", BoolText(IsM15SellSlopeDown(shift)),
          " IsSellTouch20Or75EMA(shift)=", BoolText(IsSellTouch20Or75EMA(shift)),
          " IsBearishCandle(shift)=", BoolText(IsBearishCandle(shift)),
+         " IsLondonSession(shift)=", BoolText(IsLondonSession(shift)),
+         " IsNewsAvoidTime(shift)=", BoolText(IsNewsAvoidTime(shift)),
+         " IsTokyoRangeAllowed(shift)=", BoolText(IsTokyoRangeAllowed(shift)),
+         " HasRecentH4BearishReversal(shift)=", BoolText(HasRecentH4BearishReversal(shift)),
          " IsSellSignal(shift)=", BoolText(IsSellSignal(shift)),
          " SellArrowBuffer[shift]=", DoubleToString(SellArrowBuffer[shift], Digits));
 }
@@ -444,7 +743,7 @@ void UpdateArrowBuffers(int rates_total)
    g_buySignalAlreadyShown = buySignalAlreadyShown;
    g_sellSignalAlreadyShown = sellSignalAlreadyShown;
 
-   // The current candle must never show an arrow in V1.0.
+   // The current candle must never show an arrow in V1.2.
    BuyArrowBuffer[0] = EMPTY_VALUE;
    SellArrowBuffer[0] = EMPTY_VALUE;
 }
@@ -475,11 +774,19 @@ void UpdateDebugEMALines(int rates_total)
 
 void UpdateStatusComment()
 {
-   Comment("M15_Alert_Indicator V1.1 backtest scan active",
+   double currentTokyoRangePips = GetTokyoRangePips(0);
+
+   Comment("M15_Alert_Indicator V1.2 backtest scan active",
+           "\nVersion: V1.2",
            "\nHistoricalBars: ", HistoricalBars,
            "\nScanned bars: ", g_lastScannedBars,
            "\nBUY arrows: ", g_lastBuyArrowCount,
-           "\nSELL arrows: ", g_lastSellArrowCount);
+           "\nSELL arrows: ", g_lastSellArrowCount,
+           "\nLondon filter: ", OnOffText(EnableLondonTimeFilter),
+           "\nNews filter: ", OnOffText(EnableNewsFilter),
+           "\nTokyo range filter: ", OnOffText(EnableTokyoRangeFilter),
+           "\nH4 reversal filter: ", OnOffText(EnableH4ReversalPatternFilter),
+           "\nCurrent Tokyo Range pips: ", DoubleToString(currentTokyoRangePips, 1));
 }
 
 //+------------------------------------------------------------------+
@@ -506,10 +813,10 @@ void CheckCurrentAlert()
    bool sellAlignment = IsM15SellAlignment(0);
 
    // Reset alert suppression when price leaves the pullback area or the setup breaks.
-   if(!buyAlignment || !IsM15BuySlope(0) || (currentPrice > ema20 && lowPrice > ema20))
+   if(!buyAlignment || !IsM15BuySlopeUp(0) || (currentPrice > ema20 && lowPrice > ema20))
       g_buySignalAlreadyShown = false;
 
-   if(!sellAlignment || !IsM15SellSlope(0) || (currentPrice < ema20 && highPrice < ema20))
+   if(!sellAlignment || !IsM15SellSlopeDown(0) || (currentPrice < ema20 && highPrice < ema20))
       g_sellSignalAlreadyShown = false;
 
    bool buyTouch = (lowPrice <= ema20 && currentPrice >= ema20) ||
@@ -520,16 +827,24 @@ void CheckCurrentAlert()
    bool buyAlert = !g_buySignalAlreadyShown
                    && IsH4BuyTrendForM15Shift(0)
                    && buyAlignment
-                   && IsM15BuySlope(0)
+                   && IsM15BuySlopeUp(0)
                    && buyTouch
-                   && currentPrice > openPrice;
+                   && currentPrice > openPrice
+                   && (!EnableLondonTimeFilter || IsLondonSession(0))
+                   && (!EnableNewsFilter || !IsNewsAvoidTime(0))
+                   && (!EnableTokyoRangeFilter || IsTokyoRangeAllowed(0))
+                   && (!EnableH4ReversalPatternFilter || HasRecentH4BullishReversal(0));
 
    bool sellAlert = !g_sellSignalAlreadyShown
                     && IsH4SellTrendForM15Shift(0)
                     && sellAlignment
-                    && IsM15SellSlope(0)
+                    && IsM15SellSlopeDown(0)
                     && sellTouch
-                    && currentPrice < openPrice;
+                    && currentPrice < openPrice
+                    && (!EnableLondonTimeFilter || IsLondonSession(0))
+                    && (!EnableNewsFilter || !IsNewsAvoidTime(0))
+                    && (!EnableTokyoRangeFilter || IsTokyoRangeAllowed(0))
+                    && (!EnableH4ReversalPatternFilter || HasRecentH4BearishReversal(0));
 
    if(buyAlert && g_lastBuyAlertBarTime != currentBarTime)
    {
@@ -565,7 +880,7 @@ void CheckCurrentAlert()
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   IndicatorShortName("M15 Alert Indicator V1.1 buffer");
+   IndicatorShortName("M15 Alert Indicator V1.2 buffer");
 
    SetIndexBuffer(0, BuyArrowBuffer);
    SetIndexBuffer(1, SellArrowBuffer);
@@ -597,7 +912,7 @@ int OnInit()
    SetIndexLabel(3, "Debug 75EMA");
    SetIndexLabel(4, "Debug 200EMA");
 
-   Print("M15_Alert_Indicator V1.1 loaded");
+   Print("M15_Alert_Indicator V1.2 loaded");
    UpdateStatusComment();
 
    DeleteLegacyArrowObjects();
@@ -618,7 +933,7 @@ int OnCalculate(const int rates_total,
 {
    if(Period() != PERIOD_M15)
    {
-      Comment("M15_Alert_Indicator V1.1 backtest scan active",
+      Comment("M15_Alert_Indicator V1.2 backtest scan active",
               "\nPlease attach this indicator to an M15 chart.");
       return(rates_total);
    }
