@@ -37,6 +37,9 @@ datetime g_lastBuyAlertBarTime = 0;
 datetime g_lastSellAlertBarTime = 0;
 bool g_buySignalAlreadyShown = false;
 bool g_sellSignalAlreadyShown = false;
+int g_lastScannedBars = 0;
+int g_lastBuyArrowCount = 0;
+int g_lastSellArrowCount = 0;
 
 //+------------------------------------------------------------------+
 //| Utility                                                           |
@@ -268,29 +271,40 @@ void PrintSellBufferDebug(int shift)
 //+------------------------------------------------------------------+
 void UpdateArrowBuffers(int rates_total)
 {
+   int availableM15Bars = iBars(NULL, PERIOD_M15);
+   int clearLimit = MathMin(rates_total - 1, availableM15Bars - 1);
    int maxShift = MathMin(HistoricalBars, rates_total - 1);
-   maxShift = MathMin(maxShift, iBars(NULL, PERIOD_M15) - 205);
+   maxShift = MathMin(maxShift, availableM15Bars - 205);
+
+   if(clearLimit >= 0)
+   {
+      for(int clearShift = clearLimit; clearShift >= 0; clearShift--)
+      {
+         BuyArrowBuffer[clearShift] = EMPTY_VALUE;
+         SellArrowBuffer[clearShift] = EMPTY_VALUE;
+      }
+   }
+
+   g_lastScannedBars = 0;
+   g_lastBuyArrowCount = 0;
+   g_lastSellArrowCount = 0;
 
    if(maxShift < 1)
    {
       g_buySignalAlreadyShown = false;
       g_sellSignalAlreadyShown = false;
-      BuyArrowBuffer[0] = EMPTY_VALUE;
-      SellArrowBuffer[0] = EMPTY_VALUE;
       return;
    }
 
    double arrowOffset = ArrowOffsetPips * PipPoint();
    int start = maxShift;
-   bool previousBuySignalAlreadyShown = g_buySignalAlreadyShown;
-   bool previousSellSignalAlreadyShown = g_sellSignalAlreadyShown;
    bool buySignalAlreadyShown = false;
    bool sellSignalAlreadyShown = false;
 
+   // Scan old candles to new candles so the first touch after alignment is detected correctly.
    for(int i = start; i >= 1; i--)
    {
-      BuyArrowBuffer[i] = EMPTY_VALUE;
-      SellArrowBuffer[i] = EMPTY_VALUE;
+      g_lastScannedBars++;
 
       bool buyAlignment = IsM15BuyAlignment(i);
       bool sellAlignment = IsM15SellAlignment(i);
@@ -308,6 +322,7 @@ void UpdateArrowBuffers(int rates_total)
          if(EnableArrow)
          {
             BuyArrowBuffer[i] = Low[i] - arrowOffset;
+            g_lastBuyArrowCount++;
             PrintBuyBufferDebug(i);
          }
 
@@ -321,19 +336,13 @@ void UpdateArrowBuffers(int rates_total)
          if(EnableArrow)
          {
             SellArrowBuffer[i] = High[i] + arrowOffset;
+            g_lastSellArrowCount++;
             PrintSellBufferDebug(i);
          }
 
          sellSignalAlreadyShown = true;
       }
    }
-
-   // Keep suppression active if the current alignment is still continuing.
-   if(previousBuySignalAlreadyShown && IsM15BuyAlignment(1))
-      buySignalAlreadyShown = true;
-
-   if(previousSellSignalAlreadyShown && IsM15SellAlignment(1))
-      sellSignalAlreadyShown = true;
 
    // Use the same suppression state for confirmed arrows and current-bar alerts.
    g_buySignalAlreadyShown = buySignalAlreadyShown;
@@ -367,6 +376,15 @@ void UpdateDebugEMALines(int rates_total)
          EMA200Buffer[i] = EMPTY_VALUE;
       }
    }
+}
+
+void UpdateStatusComment()
+{
+   Comment("M15_Alert_Indicator V1.0 backtest scan active",
+           "\nHistoricalBars: ", HistoricalBars,
+           "\nScanned bars: ", g_lastScannedBars,
+           "\nBUY arrows: ", g_lastBuyArrowCount,
+           "\nSELL arrows: ", g_lastSellArrowCount);
 }
 
 //+------------------------------------------------------------------+
@@ -476,7 +494,7 @@ int OnInit()
    SetIndexLabel(4, "Debug 200EMA");
 
    Print("M15_Alert_Indicator V1.0 rebuild loaded");
-   Comment("M15_Alert_Indicator V1.0 rebuild active");
+   UpdateStatusComment();
 
    DeleteLegacyArrowObjects();
 
@@ -494,13 +512,16 @@ int OnCalculate(const int rates_total,
                 const long &volume[],
                 const int &spread[])
 {
-   Comment("M15_Alert_Indicator V1.0 rebuild active");
-
    if(Period() != PERIOD_M15)
+   {
+      Comment("M15_Alert_Indicator V1.0 backtest scan active",
+              "\nPlease attach this indicator to an M15 chart.");
       return(rates_total);
+   }
 
    UpdateDebugEMALines(rates_total);
    UpdateArrowBuffers(rates_total);
+   UpdateStatusComment();
    CheckCurrentAlert();
 
    return(rates_total);
