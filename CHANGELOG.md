@@ -2,6 +2,10 @@
 
 ## V1.0 rebuild - 2026-07-08
 
+- Added full historical backtest scanning on every `OnCalculate()` run.
+- Clears BUY/SELL arrow buffers before each historical scan.
+- Scans from older candles to newer candles so only the first 75EMA touch after each EMA alignment is marked.
+- Added chart `Comment()` output for `HistoricalBars`, scanned bars, BUY arrow count, and SELL arrow count.
 - Changed indicator property colors to standard MT4 color constants for safer compilation.
 - Replaced corrupted comment lines in the arrow-state logic so `if` statements remain executable code.
 - Limited BUY/SELL arrows to the first 75EMA touch after each M15 EMA alignment trend starts.
