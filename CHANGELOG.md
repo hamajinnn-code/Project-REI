@@ -2,6 +2,8 @@
 
 ## V1.0 rebuild - 2026-07-08
 
+- Increased default `HistoricalBars` to 5000 for deeper historical review.
+- Limited actual scan depth to `Bars - 300` and an internal 20000-bar safety cap.
 - Added full historical backtest scanning on every `OnCalculate()` run.
 - Clears BUY/SELL arrow buffers before each historical scan.
 - Scans from older candles to newer candles so only the first 75EMA touch after each EMA alignment is marked.
