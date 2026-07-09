@@ -35,6 +35,8 @@ double EMA200Buffer[];
 
 datetime g_lastBuyAlertBarTime = 0;
 datetime g_lastSellAlertBarTime = 0;
+bool g_buySignalAlreadyShown = false;
+bool g_sellSignalAlreadyShown = false;
 
 //+------------------------------------------------------------------+
 //| Utility                                                           |
@@ -270,27 +272,72 @@ void UpdateArrowBuffers(int rates_total)
    maxShift = MathMin(maxShift, iBars(NULL, PERIOD_M15) - 205);
 
    if(maxShift < 1)
+   {
+      g_buySignalAlreadyShown = false;
+      g_sellSignalAlreadyShown = false;
+      BuyArrowBuffer[0] = EMPTY_VALUE;
+      SellArrowBuffer[0] = EMPTY_VALUE;
       return;
+   }
 
    double arrowOffset = ArrowOffsetPips * PipPoint();
    int start = maxShift;
+   bool previousBuySignalAlreadyShown = g_buySignalAlreadyShown;
+   bool previousSellSignalAlreadyShown = g_sellSignalAlreadyShown;
+   bool buySignalAlreadyShown = false;
+   bool sellSignalAlreadyShown = false;
 
    for(int i = start; i >= 1; i--)
    {
       BuyArrowBuffer[i] = EMPTY_VALUE;
       SellArrowBuffer[i] = EMPTY_VALUE;
 
-      if(EnableArrow && IsBuySignal(i))
+      bool buyAlignment = IsM15BuyAlignment(i);
+      bool sellAlignment = IsM15SellAlignment(i);
+
+      // EMA配列が崩れたら、そのトレンド中に表示済みの状態をリセットする。
+      if(!buyAlignment)
+         buySignalAlreadyShown = false;
+
+      if(!sellAlignment)
+         sellSignalAlreadyShown = false;
+
+      // 上昇配列成立後、最初の75EMAタッチだけをBUY候補として扱う。
+      if(buyAlignment && !buySignalAlreadyShown && IsBuySignal(i))
       {
-         BuyArrowBuffer[i] = Low[i] - arrowOffset;
-         PrintBuyBufferDebug(i);
+         if(EnableArrow)
+         {
+            BuyArrowBuffer[i] = Low[i] - arrowOffset;
+            PrintBuyBufferDebug(i);
+         }
+
+         buySignalAlreadyShown = true;
+         continue;
       }
-      else if(EnableArrow && IsSellSignal(i))
+
+      // 下降配列成立後、最初の75EMAタッチだけをSELL候補として扱う。
+      if(sellAlignment && !sellSignalAlreadyShown && IsSellSignal(i))
       {
-         SellArrowBuffer[i] = High[i] + arrowOffset;
-         PrintSellBufferDebug(i);
+         if(EnableArrow)
+         {
+            SellArrowBuffer[i] = High[i] + arrowOffset;
+            PrintSellBufferDebug(i);
+         }
+
+         sellSignalAlreadyShown = true;
       }
    }
+
+   // 未確定足アラートで既に候補を出している場合も、配列が続く限り抑制を維持する。
+   if(previousBuySignalAlreadyShown && IsM15BuyAlignment(1))
+      buySignalAlreadyShown = true;
+
+   if(previousSellSignalAlreadyShown && IsM15SellAlignment(1))
+      sellSignalAlreadyShown = true;
+
+   // 未確定足アラートも、確定済み足で既に候補が出ていれば同じ配列中は抑制する。
+   g_buySignalAlreadyShown = buySignalAlreadyShown;
+   g_sellSignalAlreadyShown = sellSignalAlreadyShown;
 
    // The current candle must never show an arrow in V1.0.
    BuyArrowBuffer[0] = EMPTY_VALUE;
@@ -340,19 +387,32 @@ void CheckCurrentAlert()
    double highPrice = iHigh(NULL, PERIOD_M15, 0);
    double currentPrice = Bid;
 
-   bool buyAlert = IsH4BuyTrendForM15Shift(0)
-                   && IsM15BuyAlignment(0)
+   bool buyAlignment = IsM15BuyAlignment(0);
+   bool sellAlignment = IsM15SellAlignment(0);
+
+   // 未確定足でも、EMA配列が崩れたら次の配列トレンドに備えてリセットする。
+   if(!buyAlignment)
+      g_buySignalAlreadyShown = false;
+
+   if(!sellAlignment)
+      g_sellSignalAlreadyShown = false;
+
+   bool buyAlert = !g_buySignalAlreadyShown
+                   && IsH4BuyTrendForM15Shift(0)
+                   && buyAlignment
                    && lowPrice <= ema75
                    && currentPrice >= ema75;
 
-   bool sellAlert = IsH4SellTrendForM15Shift(0)
-                    && IsM15SellAlignment(0)
+   bool sellAlert = !g_sellSignalAlreadyShown
+                    && IsH4SellTrendForM15Shift(0)
+                    && sellAlignment
                     && highPrice >= ema75
                     && currentPrice <= ema75;
 
    if(buyAlert && g_lastBuyAlertBarTime != currentBarTime)
    {
       g_lastBuyAlertBarTime = currentBarTime;
+      g_buySignalAlreadyShown = true;
       string buyMessage = Symbol() + " M15 BUY 75EMA touch price=" + DoubleToString(currentPrice, Digits);
 
       if(EnableAlert)
@@ -367,6 +427,7 @@ void CheckCurrentAlert()
    if(sellAlert && g_lastSellAlertBarTime != currentBarTime)
    {
       g_lastSellAlertBarTime = currentBarTime;
+      g_sellSignalAlreadyShown = true;
       string sellMessage = Symbol() + " M15 SELL 75EMA touch price=" + DoubleToString(currentPrice, Digits);
 
       if(EnableAlert)
