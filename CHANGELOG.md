@@ -1,5 +1,14 @@
 # Changelog
 
+## V1.2 revised - 2026-07-09
+
+- Removed the Tokyo range filter from core BUY/SELL signal conditions.
+- Removed the H4 reversal candlestick filter from core BUY/SELL signal conditions.
+- Updated the London session filter to support JST-based judgment.
+- Added summer/winter London session input settings.
+- Kept the manual news avoid filter as an optional filter with default OFF.
+- Updated chart `Comment()` output for the revised V1.2 filter set.
+
 ## V1.2 - 2026-07-09
 
 - Added London session filter.
