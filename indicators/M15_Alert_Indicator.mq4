@@ -14,11 +14,12 @@
 
 //+------------------------------------------------------------------+
 //| M15_Alert_Indicator                                               |
-//| V1.0: H4 200EMA + M15 EMA alignment + 75EMA touch                 |
+//| V1.1: H4 trend + M15 EMA slope + 20/75EMA pullback touch          |
 //| Drawing method: indicator buffers only                            |
 //+------------------------------------------------------------------+
 
 input int    HistoricalBars  = 5000;
+input int    SlopeLookback   = 5;
 input bool   EnableAlert     = true;
 input bool   EnablePopup     = true;
 input bool   EnableArrow     = true;
@@ -59,6 +60,14 @@ int GetScanBars(int rates_total)
    return(scanBars);
 }
 
+int GetSlopeLookback()
+{
+   if(SlopeLookback < 1)
+      return(1);
+
+   return(SlopeLookback);
+}
+
 //+------------------------------------------------------------------+
 //| Utility                                                           |
 //+------------------------------------------------------------------+
@@ -80,7 +89,13 @@ string BoolText(bool value)
 
 bool HasEnoughBars(int shift)
 {
-   if(iBars(NULL, PERIOD_M15) <= shift + 205)
+   int requiredM15Bars = 205;
+   int slopeBars = GetSlopeLookback() + 1;
+
+   if(slopeBars > requiredM15Bars)
+      requiredM15Bars = slopeBars;
+
+   if(iBars(NULL, PERIOD_M15) <= shift + requiredM15Bars)
       return(false);
 
    datetime m15Time = iTime(NULL, PERIOD_M15, shift);
@@ -183,22 +198,76 @@ bool IsM15SellAlignment(int shift)
    return(ema20 < ema75 && ema75 < ema200);
 }
 
-bool IsBuyTouch75EMA(int shift)
+bool IsM15BuySlope(int shift)
 {
+   int slopeLookback = GetSlopeLookback();
+   double ema20Now = GetM15EMA(20, shift);
+   double ema75Now = GetM15EMA(75, shift);
+   double ema20Past = GetM15EMA(20, shift + slopeLookback);
+   double ema75Past = GetM15EMA(75, shift + slopeLookback);
+
+   return(ema20Now > ema20Past && ema75Now > ema75Past);
+}
+
+bool IsM15SellSlope(int shift)
+{
+   int slopeLookback = GetSlopeLookback();
+   double ema20Now = GetM15EMA(20, shift);
+   double ema75Now = GetM15EMA(75, shift);
+   double ema20Past = GetM15EMA(20, shift + slopeLookback);
+   double ema75Past = GetM15EMA(75, shift + slopeLookback);
+
+   return(ema20Now < ema20Past && ema75Now < ema75Past);
+}
+
+bool IsBullishCandle(int shift)
+{
+   return(iClose(NULL, PERIOD_M15, shift) > iOpen(NULL, PERIOD_M15, shift));
+}
+
+bool IsBearishCandle(int shift)
+{
+   return(iClose(NULL, PERIOD_M15, shift) < iOpen(NULL, PERIOD_M15, shift));
+}
+
+bool IsBuyTouch20Or75EMA(int shift)
+{
+   double ema20 = GetM15EMA(20, shift);
    double ema75 = GetM15EMA(75, shift);
    double lowPrice = iLow(NULL, PERIOD_M15, shift);
    double closePrice = iClose(NULL, PERIOD_M15, shift);
+   bool touch20 = (lowPrice <= ema20 && closePrice >= ema20);
+   bool touch75 = (lowPrice <= ema75 && closePrice >= ema75);
 
-   return(lowPrice <= ema75 && closePrice >= ema75);
+   return(touch20 || touch75);
 }
 
-bool IsSellTouch75EMA(int shift)
+bool IsSellTouch20Or75EMA(int shift)
 {
+   double ema20 = GetM15EMA(20, shift);
    double ema75 = GetM15EMA(75, shift);
    double highPrice = iHigh(NULL, PERIOD_M15, shift);
    double closePrice = iClose(NULL, PERIOD_M15, shift);
+   bool touch20 = (highPrice >= ema20 && closePrice <= ema20);
+   bool touch75 = (highPrice >= ema75 && closePrice <= ema75);
 
-   return(highPrice >= ema75 && closePrice <= ema75);
+   return(touch20 || touch75);
+}
+
+bool IsBuyPullbackReset(int shift)
+{
+   double ema20 = GetM15EMA(20, shift);
+
+   return(iClose(NULL, PERIOD_M15, shift) > ema20 &&
+          iLow(NULL, PERIOD_M15, shift) > ema20);
+}
+
+bool IsSellPullbackReset(int shift)
+{
+   double ema20 = GetM15EMA(20, shift);
+
+   return(iClose(NULL, PERIOD_M15, shift) < ema20 &&
+          iHigh(NULL, PERIOD_M15, shift) < ema20);
 }
 
 bool IsBuySignal(int shift)
@@ -207,7 +276,9 @@ bool IsBuySignal(int shift)
    if(!HasEnoughBars(shift)) return(false);
    if(!IsH4BuyTrendForM15Shift(shift)) return(false);
    if(!IsM15BuyAlignment(shift)) return(false);
-   if(!IsBuyTouch75EMA(shift)) return(false);
+   if(!IsM15BuySlope(shift)) return(false);
+   if(!IsBuyTouch20Or75EMA(shift)) return(false);
+   if(!IsBullishCandle(shift)) return(false);
    return(true);
 }
 
@@ -217,7 +288,9 @@ bool IsSellSignal(int shift)
    if(!HasEnoughBars(shift)) return(false);
    if(!IsH4SellTrendForM15Shift(shift)) return(false);
    if(!IsM15SellAlignment(shift)) return(false);
-   if(!IsSellTouch75EMA(shift)) return(false);
+   if(!IsM15SellSlope(shift)) return(false);
+   if(!IsSellTouch20Or75EMA(shift)) return(false);
+   if(!IsBearishCandle(shift)) return(false);
    return(true);
 }
 
@@ -249,7 +322,9 @@ void PrintBuyBufferDebug(int shift)
          " H4 close=", DoubleToString(h4Close, Digits),
          " H4 ema200=", DoubleToString(h4Ema200, Digits),
          " IsH4BuyTrendForM15Shift(shift)=", BoolText(IsH4BuyTrendForM15Shift(shift)),
-         " IsBuyTouch75EMA(shift)=", BoolText(IsBuyTouch75EMA(shift)),
+         " IsM15BuySlope(shift)=", BoolText(IsM15BuySlope(shift)),
+         " IsBuyTouch20Or75EMA(shift)=", BoolText(IsBuyTouch20Or75EMA(shift)),
+         " IsBullishCandle(shift)=", BoolText(IsBullishCandle(shift)),
          " IsBuySignal(shift)=", BoolText(IsBuySignal(shift)),
          " BuyArrowBuffer[shift]=", DoubleToString(BuyArrowBuffer[shift], Digits));
 }
@@ -279,7 +354,9 @@ void PrintSellBufferDebug(int shift)
          " H4 close=", DoubleToString(h4Close, Digits),
          " H4 ema200=", DoubleToString(h4Ema200, Digits),
          " IsH4SellTrendForM15Shift(shift)=", BoolText(IsH4SellTrendForM15Shift(shift)),
-         " IsSellTouch75EMA(shift)=", BoolText(IsSellTouch75EMA(shift)),
+         " IsM15SellSlope(shift)=", BoolText(IsM15SellSlope(shift)),
+         " IsSellTouch20Or75EMA(shift)=", BoolText(IsSellTouch20Or75EMA(shift)),
+         " IsBearishCandle(shift)=", BoolText(IsBearishCandle(shift)),
          " IsSellSignal(shift)=", BoolText(IsSellSignal(shift)),
          " SellArrowBuffer[shift]=", DoubleToString(SellArrowBuffer[shift], Digits));
 }
@@ -327,14 +404,15 @@ void UpdateArrowBuffers(int rates_total)
       bool buyAlignment = IsM15BuyAlignment(i);
       bool sellAlignment = IsM15SellAlignment(i);
 
-      // Reset the shown flag when the matching EMA alignment breaks.
-      if(!buyAlignment)
+      // Reset after price moves clearly back above the 20EMA, or if the setup breaks.
+      if(!buyAlignment || !IsM15BuySlope(i) || IsBuyPullbackReset(i))
          buySignalAlreadyShown = false;
 
-      if(!sellAlignment)
+      // Reset after price moves clearly back below the 20EMA, or if the setup breaks.
+      if(!sellAlignment || !IsM15SellSlope(i) || IsSellPullbackReset(i))
          sellSignalAlreadyShown = false;
 
-      // Show only the first BUY touch after a fresh bullish alignment.
+      // Show only the first BUY touch in the same pullback.
       if(buyAlignment && !buySignalAlreadyShown && IsBuySignal(i))
       {
          if(EnableArrow)
@@ -348,7 +426,7 @@ void UpdateArrowBuffers(int rates_total)
          continue;
       }
 
-      // Show only the first SELL touch after a fresh bearish alignment.
+      // Show only the first SELL touch in the same pullback.
       if(sellAlignment && !sellSignalAlreadyShown && IsSellSignal(i))
       {
          if(EnableArrow)
@@ -397,7 +475,7 @@ void UpdateDebugEMALines(int rates_total)
 
 void UpdateStatusComment()
 {
-   Comment("M15_Alert_Indicator V1.0 backtest scan active",
+   Comment("M15_Alert_Indicator V1.1 backtest scan active",
            "\nHistoricalBars: ", HistoricalBars,
            "\nScanned bars: ", g_lastScannedBars,
            "\nBUY arrows: ", g_lastBuyArrowCount,
@@ -417,38 +495,47 @@ void CheckCurrentAlert()
    if(currentBarTime <= 0)
       return;
 
+   double ema20 = GetM15EMA(20, 0);
    double ema75 = GetM15EMA(75, 0);
    double lowPrice = iLow(NULL, PERIOD_M15, 0);
    double highPrice = iHigh(NULL, PERIOD_M15, 0);
+   double openPrice = iOpen(NULL, PERIOD_M15, 0);
    double currentPrice = Bid;
 
    bool buyAlignment = IsM15BuyAlignment(0);
    bool sellAlignment = IsM15SellAlignment(0);
 
-   // Reset alert suppression when the current EMA alignment breaks.
-   if(!buyAlignment)
+   // Reset alert suppression when price leaves the pullback area or the setup breaks.
+   if(!buyAlignment || !IsM15BuySlope(0) || (currentPrice > ema20 && lowPrice > ema20))
       g_buySignalAlreadyShown = false;
 
-   if(!sellAlignment)
+   if(!sellAlignment || !IsM15SellSlope(0) || (currentPrice < ema20 && highPrice < ema20))
       g_sellSignalAlreadyShown = false;
+
+   bool buyTouch = (lowPrice <= ema20 && currentPrice >= ema20) ||
+                   (lowPrice <= ema75 && currentPrice >= ema75);
+   bool sellTouch = (highPrice >= ema20 && currentPrice <= ema20) ||
+                    (highPrice >= ema75 && currentPrice <= ema75);
 
    bool buyAlert = !g_buySignalAlreadyShown
                    && IsH4BuyTrendForM15Shift(0)
                    && buyAlignment
-                   && lowPrice <= ema75
-                   && currentPrice >= ema75;
+                   && IsM15BuySlope(0)
+                   && buyTouch
+                   && currentPrice > openPrice;
 
    bool sellAlert = !g_sellSignalAlreadyShown
                     && IsH4SellTrendForM15Shift(0)
                     && sellAlignment
-                    && highPrice >= ema75
-                    && currentPrice <= ema75;
+                    && IsM15SellSlope(0)
+                    && sellTouch
+                    && currentPrice < openPrice;
 
    if(buyAlert && g_lastBuyAlertBarTime != currentBarTime)
    {
       g_lastBuyAlertBarTime = currentBarTime;
       g_buySignalAlreadyShown = true;
-      string buyMessage = Symbol() + " M15 BUY 75EMA touch price=" + DoubleToString(currentPrice, Digits);
+      string buyMessage = Symbol() + " M15 BUY 20/75EMA pullback touch price=" + DoubleToString(currentPrice, Digits);
 
       if(EnableAlert)
          Alert(buyMessage);
@@ -463,7 +550,7 @@ void CheckCurrentAlert()
    {
       g_lastSellAlertBarTime = currentBarTime;
       g_sellSignalAlreadyShown = true;
-      string sellMessage = Symbol() + " M15 SELL 75EMA touch price=" + DoubleToString(currentPrice, Digits);
+      string sellMessage = Symbol() + " M15 SELL 20/75EMA pullback touch price=" + DoubleToString(currentPrice, Digits);
 
       if(EnableAlert)
          Alert(sellMessage);
@@ -478,7 +565,7 @@ void CheckCurrentAlert()
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   IndicatorShortName("M15 Alert Indicator V1.0 buffer");
+   IndicatorShortName("M15 Alert Indicator V1.1 buffer");
 
    SetIndexBuffer(0, BuyArrowBuffer);
    SetIndexBuffer(1, SellArrowBuffer);
@@ -510,7 +597,7 @@ int OnInit()
    SetIndexLabel(3, "Debug 75EMA");
    SetIndexLabel(4, "Debug 200EMA");
 
-   Print("M15_Alert_Indicator V1.0 rebuild loaded");
+   Print("M15_Alert_Indicator V1.1 loaded");
    UpdateStatusComment();
 
    DeleteLegacyArrowObjects();
@@ -531,7 +618,7 @@ int OnCalculate(const int rates_total,
 {
    if(Period() != PERIOD_M15)
    {
-      Comment("M15_Alert_Indicator V1.0 backtest scan active",
+      Comment("M15_Alert_Indicator V1.1 backtest scan active",
               "\nPlease attach this indicator to an M15 chart.");
       return(rates_total);
    }
