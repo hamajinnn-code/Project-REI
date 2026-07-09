@@ -1,5 +1,16 @@
 # Changelog
 
+## V1.2 - 2026-07-09
+
+- Added London session filter.
+- Added manual news avoid filter.
+- Added Tokyo range filter.
+- Added H4 reversal candlestick filter.
+- Added ON/OFF inputs for all V1.2 filters.
+- Added H4 engulfing and pin bar reversal checks.
+- Added V1.2 debug `Comment()` fields for filter status and current Tokyo range.
+- Added `releases/V1.2/M15_Alert_Indicator.mq4`.
+
 ## V1.1 - 2026-07-09
 
 - Added `SlopeLookback` input with default value `5`.
