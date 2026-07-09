@@ -9,11 +9,11 @@ MT4 / MQL4 indicator project for testing a simple H4 trend and M15 pullback aler
 - Platform: MetaTrader 4
 - Main timeframe: M15
 - Higher timeframe: H4
-- Current version: V1.1
+- Current version: V1.2
 
-## V1.1 Scope
+## V1.2 Scope
 
-V1.1 focuses on improving entry quality. It still only displays arrows and alerts. It does not add SL/TP lines, lot calculation, EA execution, RSI, ATR, time filters, or candlestick pattern filters.
+V1.2 keeps the V1.1 entry logic and adds practical filters that can block low-quality entries. It still only displays arrows and alerts. It does not add SL/TP lines, lot calculation, or EA execution.
 
 BUY conditions:
 
@@ -33,6 +33,14 @@ SELL conditions:
 - The confirmed M15 candle is bearish.
 - Only one SELL arrow is shown for the same pullback until price clearly returns below 20EMA.
 
+Additional V1.2 filters:
+
+- London session filter based on server time.
+- Manual news avoid filter using `NewsTimes`.
+- Tokyo range filter that blocks days where the Tokyo range is too wide.
+- H4 reversal candle filter using engulfing candles and pin bars.
+- Every V1.2 filter can be turned on or off with input settings.
+
 ## Backtest Scan
 
 - `HistoricalBars` default is `5000`.
@@ -45,15 +53,16 @@ SELL conditions:
 
 ```text
 EA_challenge/
-├─ README.md
-├─ CHANGELOG.md
-├─ .gitignore
-├─ docs/
-├─ indicators/
-│  └─ M15_Alert_Indicator.mq4
-└─ releases/
-   ├─ V1.0/
-   └─ V1.1/
+|- README.md
+|- CHANGELOG.md
+|- .gitignore
+|- docs/
+|- indicators/
+|  `- M15_Alert_Indicator.mq4
+`- releases/
+   |- V1.0/
+   |- V1.1/
+   `- V1.2/
 ```
 
 ## Future Plan
