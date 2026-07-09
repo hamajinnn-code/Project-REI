@@ -2,6 +2,10 @@
 
 ## V1.0 rebuild - 2026-07-08
 
+- Limited BUY/SELL arrows to the first 75EMA touch after each M15 EMA alignment trend starts.
+- Added trend-state flags to prevent repeated arrows during the same EMA alignment.
+- Reset BUY/SELL signal flags when the relevant M15 EMA alignment breaks.
+- Applied the same one-signal-per-alignment rule to current-candle alerts.
 - Added optional debug EMA lines for M15 20EMA, 75EMA, and 200EMA using the same EMA calculation as signal logic.
 - Added `ShowDebugEMALines` input to turn the debug EMA lines on or off.
 - Stopped processing when the chart timeframe is not M15.
