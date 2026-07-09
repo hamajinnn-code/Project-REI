@@ -295,14 +295,14 @@ void UpdateArrowBuffers(int rates_total)
       bool buyAlignment = IsM15BuyAlignment(i);
       bool sellAlignment = IsM15SellAlignment(i);
 
-      // EMA配列が崩れたら、そのトレンド中に表示済みの状態をリセットする。
+      // Reset the shown flag when the matching EMA alignment breaks.
       if(!buyAlignment)
          buySignalAlreadyShown = false;
 
       if(!sellAlignment)
          sellSignalAlreadyShown = false;
 
-      // 上昇配列成立後、最初の75EMAタッチだけをBUY候補として扱う。
+      // Show only the first BUY touch after a fresh bullish alignment.
       if(buyAlignment && !buySignalAlreadyShown && IsBuySignal(i))
       {
          if(EnableArrow)
@@ -315,7 +315,7 @@ void UpdateArrowBuffers(int rates_total)
          continue;
       }
 
-      // 下降配列成立後、最初の75EMAタッチだけをSELL候補として扱う。
+      // Show only the first SELL touch after a fresh bearish alignment.
       if(sellAlignment && !sellSignalAlreadyShown && IsSellSignal(i))
       {
          if(EnableArrow)
@@ -328,14 +328,14 @@ void UpdateArrowBuffers(int rates_total)
       }
    }
 
-   // 未確定足アラートで既に候補を出している場合も、配列が続く限り抑制を維持する。
+   // Keep suppression active if the current alignment is still continuing.
    if(previousBuySignalAlreadyShown && IsM15BuyAlignment(1))
       buySignalAlreadyShown = true;
 
    if(previousSellSignalAlreadyShown && IsM15SellAlignment(1))
       sellSignalAlreadyShown = true;
 
-   // 未確定足アラートも、確定済み足で既に候補が出ていれば同じ配列中は抑制する。
+   // Use the same suppression state for confirmed arrows and current-bar alerts.
    g_buySignalAlreadyShown = buySignalAlreadyShown;
    g_sellSignalAlreadyShown = sellSignalAlreadyShown;
 
@@ -390,7 +390,7 @@ void CheckCurrentAlert()
    bool buyAlignment = IsM15BuyAlignment(0);
    bool sellAlignment = IsM15SellAlignment(0);
 
-   // 未確定足でも、EMA配列が崩れたら次の配列トレンドに備えてリセットする。
+   // Reset alert suppression when the current EMA alignment breaks.
    if(!buyAlignment)
       g_buySignalAlreadyShown = false;
 
