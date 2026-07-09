@@ -2,6 +2,8 @@
 
 ## V1.0 rebuild - 2026-07-08
 
+- Changed indicator property colors to standard MT4 color constants for safer compilation.
+- Replaced corrupted comment lines in the arrow-state logic so `if` statements remain executable code.
 - Limited BUY/SELL arrows to the first 75EMA touch after each M15 EMA alignment trend starts.
 - Added trend-state flags to prevent repeated arrows during the same EMA alignment.
 - Reset BUY/SELL signal flags when the relevant M15 EMA alignment breaks.
