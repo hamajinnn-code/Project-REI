@@ -18,7 +18,7 @@
 //| Drawing method: indicator buffers only                            |
 //+------------------------------------------------------------------+
 
-input int    HistoricalBars  = 500;
+input int    HistoricalBars  = 5000;
 input bool   EnableAlert     = true;
 input bool   EnablePopup     = true;
 input bool   EnableArrow     = true;
@@ -40,6 +40,24 @@ bool g_sellSignalAlreadyShown = false;
 int g_lastScannedBars = 0;
 int g_lastBuyArrowCount = 0;
 int g_lastSellArrowCount = 0;
+
+int GetScanBars(int rates_total)
+{
+   int availableBars = MathMin(Bars, iBars(NULL, PERIOD_M15));
+   int safeBars = availableBars - 300;
+
+   if(safeBars < 1)
+      return(0);
+
+   int scanBars = MathMin(HistoricalBars, safeBars);
+   scanBars = MathMin(scanBars, rates_total - 1);
+   scanBars = MathMin(scanBars, 20000);
+
+   if(scanBars < 1)
+      return(0);
+
+   return(scanBars);
+}
 
 //+------------------------------------------------------------------+
 //| Utility                                                           |
@@ -273,8 +291,8 @@ void UpdateArrowBuffers(int rates_total)
 {
    int availableM15Bars = iBars(NULL, PERIOD_M15);
    int clearLimit = MathMin(rates_total - 1, availableM15Bars - 1);
-   int maxShift = MathMin(HistoricalBars, rates_total - 1);
-   maxShift = MathMin(maxShift, availableM15Bars - 205);
+   clearLimit = MathMin(clearLimit, 20000);
+   int scanBars = GetScanBars(rates_total);
 
    if(clearLimit >= 0)
    {
@@ -289,7 +307,7 @@ void UpdateArrowBuffers(int rates_total)
    g_lastBuyArrowCount = 0;
    g_lastSellArrowCount = 0;
 
-   if(maxShift < 1)
+   if(scanBars < 1)
    {
       g_buySignalAlreadyShown = false;
       g_sellSignalAlreadyShown = false;
@@ -297,7 +315,7 @@ void UpdateArrowBuffers(int rates_total)
    }
 
    double arrowOffset = ArrowOffsetPips * PipPoint();
-   int start = maxShift;
+   int start = scanBars;
    bool buySignalAlreadyShown = false;
    bool sellSignalAlreadyShown = false;
 
@@ -355,8 +373,7 @@ void UpdateArrowBuffers(int rates_total)
 
 void UpdateDebugEMALines(int rates_total)
 {
-   int maxShift = MathMin(HistoricalBars, rates_total - 1);
-   maxShift = MathMin(maxShift, iBars(NULL, PERIOD_M15) - 1);
+   int maxShift = GetScanBars(rates_total);
 
    if(maxShift < 0)
       return;
