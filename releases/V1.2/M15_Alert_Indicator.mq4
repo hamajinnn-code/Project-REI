@@ -30,15 +30,22 @@ input color  SellArrowColor  = C'205,139,157';
 input bool   EnableLondonTimeFilter = true;
 input int    LondonStartHour = 15;
 input int    LondonEndHour = 22;
-input bool   EnableNewsFilter = true;
+input bool   UseJapanTimeForLondonSession = true;
+input int    BrokerToJSTOffsetHours = 6;
+input int    LondonStartHourJST_Summer = 16;
+input int    LondonEndHourJST_Summer = 24;
+input int    LondonStartHourJST_Winter = 17;
+input int    LondonEndHourJST_Winter = 25;
+input bool   UseSummerTime = true;
+input bool   EnableNewsFilter = false;
 input string NewsTimes = "";
 input int    NewsAvoidMinutesBefore = 30;
 input int    NewsAvoidMinutesAfter = 30;
-input bool   EnableTokyoRangeFilter = true;
+input bool   EnableTokyoRangeFilter = false;
 input int    TokyoStartHour = 0;
 input int    TokyoEndHour = 9;
 input double MaxTokyoRangePips = 40.0;
-input bool   EnableH4ReversalPatternFilter = true;
+input bool   EnableH4ReversalPatternFilter = false;
 input int    H4ReversalLookback = 10;
 input double PinbarWickRatio = 2.0;
 input double PinbarBodyMaxRatio = 0.35;
@@ -128,6 +135,45 @@ datetime BuildDayTime(datetime baseTime, int hour)
    return(StrToTime(DateText(baseTime) + " " + StringFormat("%02d:00", hour)));
 }
 
+string LondonTimeBasisText()
+{
+   if(UseJapanTimeForLondonSession)
+      return("JST");
+
+   return("Server");
+}
+
+int GetJSTHour(datetime serverTime)
+{
+   // Convert broker server time to JST for London session judgment.
+   datetime jstTime = serverTime + BrokerToJSTOffsetHours * 3600;
+
+   return(TimeHour(jstTime));
+}
+
+bool IsHourInRange(int hour, int startHour, int endHour)
+{
+   // Support ranges that cross midnight, such as 16-24 or 17-25.
+   int normalizedHour = hour;
+
+   while(normalizedHour < 0)
+      normalizedHour += 24;
+
+   while(normalizedHour >= 24)
+      normalizedHour -= 24;
+
+   if(startHour == endHour)
+      return(true);
+
+   if(endHour >= 24)
+      return(normalizedHour >= startHour || normalizedHour < (endHour - 24));
+
+   if(startHour < endHour)
+      return(normalizedHour >= startHour && normalizedHour < endHour);
+
+   return(normalizedHour >= startHour || normalizedHour < endHour);
+}
+
 bool HasEnoughBars(int shift)
 {
    int requiredM15Bars = 205;
@@ -146,13 +192,7 @@ bool HasEnoughBars(int shift)
    if(m15Time <= 0 || h4Shift < 0)
       return(false);
 
-   int requiredH4Bars = 205;
-   int reversalBars = GetH4ReversalLookback() + 3;
-
-   if(reversalBars > requiredH4Bars)
-      requiredH4Bars = reversalBars;
-
-   if(iBars(NULL, PERIOD_H4) <= confirmedH4Shift + requiredH4Bars)
+   if(iBars(NULL, PERIOD_H4) <= confirmedH4Shift + 205)
       return(false);
 
    return(true);
@@ -334,15 +374,16 @@ bool IsLondonSession(int shift)
    if(barTime <= 0)
       return(false);
 
-   int hour = TimeHour(barTime);
+   if(UseJapanTimeForLondonSession)
+   {
+      int jstHour = GetJSTHour(barTime);
+      int jstStartHour = UseSummerTime ? LondonStartHourJST_Summer : LondonStartHourJST_Winter;
+      int jstEndHour = UseSummerTime ? LondonEndHourJST_Summer : LondonEndHourJST_Winter;
 
-   if(LondonStartHour == LondonEndHour)
-      return(true);
+      return(IsHourInRange(jstHour, jstStartHour, jstEndHour));
+   }
 
-   if(LondonStartHour < LondonEndHour)
-      return(hour >= LondonStartHour && hour < LondonEndHour);
-
-   return(hour >= LondonStartHour || hour < LondonEndHour);
+   return(IsHourInRange(TimeHour(barTime), LondonStartHour, LondonEndHour));
 }
 
 bool IsNewsAvoidTime(int shift)
@@ -564,8 +605,6 @@ bool IsBuySignal(int shift)
    if(!IsBullishCandle(shift)) return(false);
    if(EnableLondonTimeFilter && !IsLondonSession(shift)) return(false);
    if(EnableNewsFilter && IsNewsAvoidTime(shift)) return(false);
-   if(EnableTokyoRangeFilter && !IsTokyoRangeAllowed(shift)) return(false);
-   if(EnableH4ReversalPatternFilter && !HasRecentH4BullishReversal(shift)) return(false);
    return(true);
 }
 
@@ -580,8 +619,6 @@ bool IsSellSignal(int shift)
    if(!IsBearishCandle(shift)) return(false);
    if(EnableLondonTimeFilter && !IsLondonSession(shift)) return(false);
    if(EnableNewsFilter && IsNewsAvoidTime(shift)) return(false);
-   if(EnableTokyoRangeFilter && !IsTokyoRangeAllowed(shift)) return(false);
-   if(EnableH4ReversalPatternFilter && !HasRecentH4BearishReversal(shift)) return(false);
    return(true);
 }
 
@@ -618,8 +655,6 @@ void PrintBuyBufferDebug(int shift)
          " IsBullishCandle(shift)=", BoolText(IsBullishCandle(shift)),
          " IsLondonSession(shift)=", BoolText(IsLondonSession(shift)),
          " IsNewsAvoidTime(shift)=", BoolText(IsNewsAvoidTime(shift)),
-         " IsTokyoRangeAllowed(shift)=", BoolText(IsTokyoRangeAllowed(shift)),
-         " HasRecentH4BullishReversal(shift)=", BoolText(HasRecentH4BullishReversal(shift)),
          " IsBuySignal(shift)=", BoolText(IsBuySignal(shift)),
          " BuyArrowBuffer[shift]=", DoubleToString(BuyArrowBuffer[shift], Digits));
 }
@@ -654,8 +689,6 @@ void PrintSellBufferDebug(int shift)
          " IsBearishCandle(shift)=", BoolText(IsBearishCandle(shift)),
          " IsLondonSession(shift)=", BoolText(IsLondonSession(shift)),
          " IsNewsAvoidTime(shift)=", BoolText(IsNewsAvoidTime(shift)),
-         " IsTokyoRangeAllowed(shift)=", BoolText(IsTokyoRangeAllowed(shift)),
-         " HasRecentH4BearishReversal(shift)=", BoolText(HasRecentH4BearishReversal(shift)),
          " IsSellSignal(shift)=", BoolText(IsSellSignal(shift)),
          " SellArrowBuffer[shift]=", DoubleToString(SellArrowBuffer[shift], Digits));
 }
@@ -774,19 +807,16 @@ void UpdateDebugEMALines(int rates_total)
 
 void UpdateStatusComment()
 {
-   double currentTokyoRangePips = GetTokyoRangePips(0);
-
-   Comment("M15_Alert_Indicator V1.2 backtest scan active",
-           "\nVersion: V1.2",
+   Comment("M15_Alert_Indicator V1.2 revised",
            "\nHistoricalBars: ", HistoricalBars,
            "\nScanned bars: ", g_lastScannedBars,
            "\nBUY arrows: ", g_lastBuyArrowCount,
            "\nSELL arrows: ", g_lastSellArrowCount,
            "\nLondon filter: ", OnOffText(EnableLondonTimeFilter),
-           "\nNews filter: ", OnOffText(EnableNewsFilter),
-           "\nTokyo range filter: ", OnOffText(EnableTokyoRangeFilter),
-           "\nH4 reversal filter: ", OnOffText(EnableH4ReversalPatternFilter),
-           "\nCurrent Tokyo Range pips: ", DoubleToString(currentTokyoRangePips, 1));
+           "\nLondon time basis: ", LondonTimeBasisText(),
+           "\nUseSummerTime: ", BoolText(UseSummerTime),
+           "\nBrokerToJSTOffsetHours: ", BrokerToJSTOffsetHours,
+           "\nNews filter: ", OnOffText(EnableNewsFilter));
 }
 
 //+------------------------------------------------------------------+
@@ -831,9 +861,7 @@ void CheckCurrentAlert()
                    && buyTouch
                    && currentPrice > openPrice
                    && (!EnableLondonTimeFilter || IsLondonSession(0))
-                   && (!EnableNewsFilter || !IsNewsAvoidTime(0))
-                   && (!EnableTokyoRangeFilter || IsTokyoRangeAllowed(0))
-                   && (!EnableH4ReversalPatternFilter || HasRecentH4BullishReversal(0));
+                   && (!EnableNewsFilter || !IsNewsAvoidTime(0));
 
    bool sellAlert = !g_sellSignalAlreadyShown
                     && IsH4SellTrendForM15Shift(0)
@@ -842,9 +870,7 @@ void CheckCurrentAlert()
                     && sellTouch
                     && currentPrice < openPrice
                     && (!EnableLondonTimeFilter || IsLondonSession(0))
-                    && (!EnableNewsFilter || !IsNewsAvoidTime(0))
-                    && (!EnableTokyoRangeFilter || IsTokyoRangeAllowed(0))
-                    && (!EnableH4ReversalPatternFilter || HasRecentH4BearishReversal(0));
+                    && (!EnableNewsFilter || !IsNewsAvoidTime(0));
 
    if(buyAlert && g_lastBuyAlertBarTime != currentBarTime)
    {
@@ -880,7 +906,7 @@ void CheckCurrentAlert()
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   IndicatorShortName("M15 Alert Indicator V1.2 buffer");
+   IndicatorShortName("M15 Alert Indicator V1.2 revised");
 
    SetIndexBuffer(0, BuyArrowBuffer);
    SetIndexBuffer(1, SellArrowBuffer);
@@ -912,7 +938,7 @@ int OnInit()
    SetIndexLabel(3, "Debug 75EMA");
    SetIndexLabel(4, "Debug 200EMA");
 
-   Print("M15_Alert_Indicator V1.2 loaded");
+   Print("M15_Alert_Indicator V1.2 revised loaded");
    UpdateStatusComment();
 
    DeleteLegacyArrowObjects();
@@ -933,7 +959,7 @@ int OnCalculate(const int rates_total,
 {
    if(Period() != PERIOD_M15)
    {
-      Comment("M15_Alert_Indicator V1.2 backtest scan active",
+      Comment("M15_Alert_Indicator V1.2 revised",
               "\nPlease attach this indicator to an M15 chart.");
       return(rates_total);
    }
