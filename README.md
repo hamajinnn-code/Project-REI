@@ -1,6 +1,6 @@
-# EA_challenge
+# Project REI
 
-MT4 / MQL4 indicator project for testing a simple H4 trend and M15 pullback alert system.
+Project REI is a long-term algorithmic trading development project for MT4 / MQL4 indicators, Expert Advisors, trading logic, backtesting, and documentation.
 
 ## Indicator
 
@@ -67,7 +67,7 @@ Branch strategy:
 ## Folder Structure
 
 ```text
-EA_challenge/
+Project-REI/
 |- README.md
 |- CHANGELOG.md
 |- .gitignore
