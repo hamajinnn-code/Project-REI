@@ -1,5 +1,13 @@
 # Changelog
 
+## V1.2.1 revised - 2026-07-10
+
+- Removed repeated `iMA()` calls from slope functions.
+- Added `H4TrendCache` for the Forex Tester indicator.
+- Reduced repeated `iBarShift()` calls by reusing the current H4 block.
+- Optimized the FT indicator loop.
+- No logic changes.
+
 ## V1.2.1 - 2026-07-10
 
 - Performance optimization only.
