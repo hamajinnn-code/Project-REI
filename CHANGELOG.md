@@ -1,5 +1,12 @@
 # Changelog
 
+## V1.2.2 - 2026-07-10
+
+- Added incremental recalculation for Forex Tester.
+- Added `ShowEMALines` option.
+- Reduced repeated full historical scans.
+- No logic changes.
+
 ## V1.2.1 revised - 2026-07-10
 
 - Removed repeated `iMA()` calls from slope functions.
