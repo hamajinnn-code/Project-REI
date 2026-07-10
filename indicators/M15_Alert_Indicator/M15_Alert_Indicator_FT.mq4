@@ -12,6 +12,7 @@
 #property indicator_width5 2
 
 input int HistoricalBars = 5000;
+input int SlopeLookback = 5;
 
 double Ema20Buffer[];
 double Ema75Buffer[];
@@ -21,7 +22,7 @@ double SellArrowBuffer[];
 
 int OnInit()
 {
-   IndicatorShortName("M15_Alert_Indicator_FT_Display_Check");
+   IndicatorShortName("M15_Alert_Indicator_FT_M15_V1_1_Check");
 
    SetIndexBuffer(0, Ema20Buffer);
    SetIndexStyle(0, DRAW_LINE, STYLE_SOLID, 1, DodgerBlue);
@@ -68,6 +69,8 @@ int OnCalculate(const int rates_total,
                 const int &spread[])
 {
    int limit = MathMin(rates_total - 1, HistoricalBars);
+   bool buySignalAlreadyShown = false;
+   bool sellSignalAlreadyShown = false;
 
    for(int i = limit; i >= 1; i--)
    {
@@ -78,19 +81,26 @@ int OnCalculate(const int rates_total,
       BuyArrowBuffer[i] = EMPTY_VALUE;
       SellArrowBuffer[i] = EMPTY_VALUE;
 
-      if(Ema20Buffer[i] > Ema75Buffer[i] &&
-         Ema75Buffer[i] > Ema200Buffer[i] &&
-         Low[i] <= Ema20Buffer[i] &&
-         Close[i] > Open[i])
+      bool buyAlignment = IsBuyAlignment(i);
+      bool sellAlignment = IsSellAlignment(i);
+      bool buySlopeUp = IsBuySlopeUp(i, rates_total);
+      bool sellSlopeDown = IsSellSlopeDown(i, rates_total);
+
+      if(!buyAlignment || !buySlopeUp || IsBuyPullbackReset(i))
+         buySignalAlreadyShown = false;
+
+      if(!sellAlignment || !sellSlopeDown || IsSellPullbackReset(i))
+         sellSignalAlreadyShown = false;
+
+      if(!buySignalAlreadyShown && IsBuySignal(i, rates_total))
       {
          BuyArrowBuffer[i] = Low[i] - 10 * Point;
+         buySignalAlreadyShown = true;
       }
-      else if(Ema20Buffer[i] < Ema75Buffer[i] &&
-              Ema75Buffer[i] < Ema200Buffer[i] &&
-              High[i] >= Ema20Buffer[i] &&
-              Close[i] < Open[i])
+      else if(!sellSignalAlreadyShown && IsSellSignal(i, rates_total))
       {
          SellArrowBuffer[i] = High[i] + 10 * Point;
+         sellSignalAlreadyShown = true;
       }
    }
 
@@ -101,4 +111,129 @@ int OnCalculate(const int rates_total,
    SellArrowBuffer[0] = EMPTY_VALUE;
 
    return(rates_total);
+}
+
+bool HasSlopeData(int shift, int rates_total)
+{
+   int lookback = SlopeLookback;
+   if(lookback < 1)
+      lookback = 1;
+
+   return(shift + lookback < rates_total);
+}
+
+bool IsBuyAlignment(int shift)
+{
+   return(Ema20Buffer[shift] > Ema75Buffer[shift] &&
+          Ema75Buffer[shift] > Ema200Buffer[shift]);
+}
+
+bool IsSellAlignment(int shift)
+{
+   return(Ema20Buffer[shift] < Ema75Buffer[shift] &&
+          Ema75Buffer[shift] < Ema200Buffer[shift]);
+}
+
+bool IsBuySlopeUp(int shift, int rates_total)
+{
+   int lookback = SlopeLookback;
+   if(lookback < 1)
+      lookback = 1;
+   if(!HasSlopeData(shift, rates_total))
+      return(false);
+
+   double ema20Past = iMA(NULL, 0, 20, 0, MODE_EMA, PRICE_CLOSE, shift + lookback);
+   double ema75Past = iMA(NULL, 0, 75, 0, MODE_EMA, PRICE_CLOSE, shift + lookback);
+
+   return(Ema20Buffer[shift] > ema20Past &&
+          Ema75Buffer[shift] > ema75Past);
+}
+
+bool IsSellSlopeDown(int shift, int rates_total)
+{
+   int lookback = SlopeLookback;
+   if(lookback < 1)
+      lookback = 1;
+   if(!HasSlopeData(shift, rates_total))
+      return(false);
+
+   double ema20Past = iMA(NULL, 0, 20, 0, MODE_EMA, PRICE_CLOSE, shift + lookback);
+   double ema75Past = iMA(NULL, 0, 75, 0, MODE_EMA, PRICE_CLOSE, shift + lookback);
+
+   return(Ema20Buffer[shift] < ema20Past &&
+          Ema75Buffer[shift] < ema75Past);
+}
+
+bool IsBuyTouch20Or75EMA(int shift)
+{
+   bool touch20 = (Low[shift] <= Ema20Buffer[shift] &&
+                   Close[shift] >= Ema20Buffer[shift]);
+   bool touch75 = (Low[shift] <= Ema75Buffer[shift] &&
+                   Close[shift] >= Ema75Buffer[shift]);
+
+   return(touch20 || touch75);
+}
+
+bool IsSellTouch20Or75EMA(int shift)
+{
+   bool touch20 = (High[shift] >= Ema20Buffer[shift] &&
+                   Close[shift] <= Ema20Buffer[shift]);
+   bool touch75 = (High[shift] >= Ema75Buffer[shift] &&
+                   Close[shift] <= Ema75Buffer[shift]);
+
+   return(touch20 || touch75);
+}
+
+bool IsBullishCandle(int shift)
+{
+   return(Close[shift] > Open[shift]);
+}
+
+bool IsBearishCandle(int shift)
+{
+   return(Close[shift] < Open[shift]);
+}
+
+bool IsBuyPullbackReset(int shift)
+{
+   return(Close[shift] > Ema20Buffer[shift] &&
+          Low[shift] > Ema20Buffer[shift]);
+}
+
+bool IsSellPullbackReset(int shift)
+{
+   return(Close[shift] < Ema20Buffer[shift] &&
+          High[shift] < Ema20Buffer[shift]);
+}
+
+bool IsBuySignal(int shift, int rates_total)
+{
+   if(shift <= 0)
+      return(false);
+   if(!IsBuyAlignment(shift))
+      return(false);
+   if(!IsBuySlopeUp(shift, rates_total))
+      return(false);
+   if(!IsBuyTouch20Or75EMA(shift))
+      return(false);
+   if(!IsBullishCandle(shift))
+      return(false);
+
+   return(true);
+}
+
+bool IsSellSignal(int shift, int rates_total)
+{
+   if(shift <= 0)
+      return(false);
+   if(!IsSellAlignment(shift))
+      return(false);
+   if(!IsSellSlopeDown(shift, rates_total))
+      return(false);
+   if(!IsSellTouch20Or75EMA(shift))
+      return(false);
+   if(!IsBearishCandle(shift))
+      return(false);
+
+   return(true);
 }
