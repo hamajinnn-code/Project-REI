@@ -1,5 +1,11 @@
 # Changelog
 
+## Repository renamed - 2026-07-10
+
+- Repository renamed from `EA_challenge` to `Project-REI`.
+- README project name updated to Project REI.
+- Existing Git history, branches, README, CHANGELOG, and issues are intended to be preserved through the GitHub repository rename flow.
+
 ## V1.2 revised - 2026-07-09
 
 - Entry signal quality improved.
