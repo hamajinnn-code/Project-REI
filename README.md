@@ -52,6 +52,18 @@ Removed from core signal conditions:
 - The indicator scans old candles to new candles so pullback state is handled correctly.
 - Chart `Comment()` displays `HistoricalBars`, scanned bars, BUY arrows, and SELL arrows.
 
+## Branch Strategy
+
+`main` is reserved for stable releases. The current stable baseline is `M15_Alert_Indicator` V1.2 revised.
+
+Branch strategy:
+
+- main: stable releases only
+- develop: integration branch for ongoing development
+- feature/sl: stop-loss logic development
+- feature/tp: take-profit logic development
+- feature/ea: EA conversion development
+
 ## Folder Structure
 
 ```text
