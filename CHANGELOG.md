@@ -1,5 +1,11 @@
 # Changelog
 
+## Forex Tester H4 filter - 2026-07-10
+
+Forex Tester version:
+- Added H4 200EMA trend filter to FT indicator
+- Kept FT version separate from MT4 production indicator
+
 ## Forex Tester M15 V1.1 logic check - 2026-07-10
 
 - Ported M15-only V1.1-style arrow logic into `M15_Alert_Indicator_FT.mq4`.
