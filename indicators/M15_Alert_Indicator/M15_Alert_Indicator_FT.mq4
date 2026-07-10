@@ -12,7 +12,9 @@
 #property indicator_width5 2
 
 input int HistoricalBars = 5000;
+input int RecalculateBars = 300;
 input int SlopeLookback = 5;
+input bool ShowEMALines = false;
 
 double Ema20Buffer[];
 double Ema75Buffer[];
@@ -30,15 +32,24 @@ int OnInit()
    IndicatorShortName("M15_Alert_Indicator_FT_H4_M15_Check");
 
    SetIndexBuffer(0, Ema20Buffer);
-   SetIndexStyle(0, DRAW_LINE, STYLE_SOLID, 1, DodgerBlue);
+   if(ShowEMALines)
+      SetIndexStyle(0, DRAW_LINE, STYLE_SOLID, 1, DodgerBlue);
+   else
+      SetIndexStyle(0, DRAW_NONE, STYLE_SOLID, 1, DodgerBlue);
    SetIndexLabel(0, "EMA 20");
 
    SetIndexBuffer(1, Ema75Buffer);
-   SetIndexStyle(1, DRAW_LINE, STYLE_SOLID, 1, Orange);
+   if(ShowEMALines)
+      SetIndexStyle(1, DRAW_LINE, STYLE_SOLID, 1, Orange);
+   else
+      SetIndexStyle(1, DRAW_NONE, STYLE_SOLID, 1, Orange);
    SetIndexLabel(1, "EMA 75");
 
    SetIndexBuffer(2, Ema200Buffer);
-   SetIndexStyle(2, DRAW_LINE, STYLE_SOLID, 1, Silver);
+   if(ShowEMALines)
+      SetIndexStyle(2, DRAW_LINE, STYLE_SOLID, 1, Silver);
+   else
+      SetIndexStyle(2, DRAW_NONE, STYLE_SOLID, 1, Silver);
    SetIndexLabel(2, "EMA 200");
 
    SetIndexBuffer(3, BuyArrowBuffer);
@@ -73,21 +84,18 @@ int OnCalculate(const int rates_total,
                 const long &volume[],
                 const int &spread[])
 {
-   int limit = MathMin(rates_total - 1, HistoricalBars);
+   int scanLimit;
    int lookback = MathMax(SlopeLookback, 1);
-   int emaLimit = MathMin(rates_total - 1, limit + lookback);
-   int emaRecalcLimit = emaLimit;
+   int recalculateBars = MathMax(RecalculateBars, 1);
+   if(prev_calculated == 0)
+      scanLimit = MathMin(rates_total - 1, HistoricalBars);
+   else
+      scanLimit = MathMin(rates_total - 1, recalculateBars);
+
+   int emaRecalcLimit = MathMin(rates_total - 1, scanLimit + lookback);
    int h4Bars = iBars(NULL, PERIOD_H4);
    bool buySignalAlreadyShown = false;
    bool sellSignalAlreadyShown = false;
-
-   if(prev_calculated > 0)
-   {
-      int changedBars = rates_total - prev_calculated + lookback + 2;
-      if(changedBars < lookback + 2)
-         changedBars = lookback + 2;
-      emaRecalcLimit = MathMin(emaLimit, changedBars);
-   }
 
    ArrayResize(H4TrendCache, rates_total);
    ArraySetAsSeries(H4TrendCache, true);
@@ -107,7 +115,7 @@ int OnCalculate(const int rates_total,
    datetime sourceH4OpenTime = 0;
    datetime nextH4OpenTime = 0;
 
-   for(int h = limit; h >= 1; h--)
+   for(int h = scanLimit; h >= 1; h--)
    {
       datetime m15Time = iTime(NULL, 0, h);
 
@@ -138,7 +146,7 @@ int OnCalculate(const int rates_total,
          H4TrendCache[h] = GetCachedH4Trend(sourceH4Shift + 1, h4Bars);
    }
 
-   for(int i = limit; i >= 1; i--)
+   for(int i = scanLimit; i >= 1; i--)
    {
       double ema20 = Ema20Buffer[i];
       double ema75 = Ema75Buffer[i];
