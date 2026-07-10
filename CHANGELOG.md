@@ -1,5 +1,13 @@
 # Changelog
 
+## Forex Tester display verification - 2026-07-10
+
+Added Forex Tester display verification indicator:
+- Created `M15_Alert_Indicator_FT.mq4`
+- Added simple EMA display buffers
+- Added temporary arrow logic for FT visibility check
+- Removed alerts and unsupported functions for FT compatibility
+
 ## Repository structure reorganized - 2026-07-10
 
 - Moved M15_Alert_Indicator into dedicated indicator folder.
