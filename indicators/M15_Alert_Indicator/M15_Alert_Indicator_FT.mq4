@@ -22,7 +22,7 @@ double SellArrowBuffer[];
 
 int OnInit()
 {
-   IndicatorShortName("M15_Alert_Indicator_FT_M15_V1_1_Check");
+   IndicatorShortName("M15_Alert_Indicator_FT_H4_M15_Check");
 
    SetIndexBuffer(0, Ema20Buffer);
    SetIndexStyle(0, DRAW_LINE, STYLE_SOLID, 1, DodgerBlue);
@@ -206,9 +206,52 @@ bool IsSellPullbackReset(int shift)
           High[shift] < Ema20Buffer[shift]);
 }
 
+int GetConfirmedH4ShiftForM15Shift(int m15Shift)
+{
+   datetime m15Time = iTime(NULL, 0, m15Shift);
+   if(m15Time <= 0)
+      return(-1);
+
+   int h4Shift = iBarShift(NULL, PERIOD_H4, m15Time, false);
+   if(h4Shift < 0)
+      return(-1);
+
+   return(h4Shift + 1);
+}
+
+bool IsH4BuyTrendForM15Shift(int m15Shift)
+{
+   int h4Shift = GetConfirmedH4ShiftForM15Shift(m15Shift);
+   if(h4Shift < 0)
+      return(false);
+   if(iBars(NULL, PERIOD_H4) <= h4Shift + 200)
+      return(false);
+
+   double h4Close = iClose(NULL, PERIOD_H4, h4Shift);
+   double h4Ema200 = iMA(NULL, PERIOD_H4, 200, 0, MODE_EMA, PRICE_CLOSE, h4Shift);
+
+   return(h4Close > h4Ema200);
+}
+
+bool IsH4SellTrendForM15Shift(int m15Shift)
+{
+   int h4Shift = GetConfirmedH4ShiftForM15Shift(m15Shift);
+   if(h4Shift < 0)
+      return(false);
+   if(iBars(NULL, PERIOD_H4) <= h4Shift + 200)
+      return(false);
+
+   double h4Close = iClose(NULL, PERIOD_H4, h4Shift);
+   double h4Ema200 = iMA(NULL, PERIOD_H4, 200, 0, MODE_EMA, PRICE_CLOSE, h4Shift);
+
+   return(h4Close < h4Ema200);
+}
+
 bool IsBuySignal(int shift, int rates_total)
 {
    if(shift <= 0)
+      return(false);
+   if(!IsH4BuyTrendForM15Shift(shift))
       return(false);
    if(!IsBuyAlignment(shift))
       return(false);
@@ -225,6 +268,8 @@ bool IsBuySignal(int shift, int rates_total)
 bool IsSellSignal(int shift, int rates_total)
 {
    if(shift <= 0)
+      return(false);
+   if(!IsH4SellTrendForM15Shift(shift))
       return(false);
    if(!IsSellAlignment(shift))
       return(false);
