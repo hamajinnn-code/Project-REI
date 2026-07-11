@@ -1,15 +1,23 @@
 #property indicator_chart_window
-#property indicator_buffers 5
+#property indicator_buffers 9
 #property indicator_color1 DodgerBlue
 #property indicator_color2 Orange
 #property indicator_color3 Silver
 #property indicator_color4 Aqua
 #property indicator_color5 Pink
+#property indicator_color6 LightCoral
+#property indicator_color7 LightBlue
+#property indicator_color8 LightCoral
+#property indicator_color9 LightBlue
 #property indicator_width1 1
 #property indicator_width2 1
 #property indicator_width3 1
 #property indicator_width4 2
 #property indicator_width5 2
+#property indicator_width6 1
+#property indicator_width7 1
+#property indicator_width8 1
+#property indicator_width9 1
 
 input int HistoricalBars = 5000;
 input int RecalculateBars = 300;
@@ -18,25 +26,23 @@ input bool ShowEMALines = false;
 input bool EnableEngulfingFilter = true;
 input double EngulfingBodyRatio = 1.0;
 input bool EnableReferenceSLTP = true;
-input int ZigZagDepth = 12;
-input int ZigZagDeviation = 5;
-input int ZigZagBackstep = 3;
-input int ZigZagSearchBars = 500;
-input int ZigZagConfirmBars = 3;
+input int SwingLookback = 3;
+input int SwingSearchBars = 500;
 input double RiskRewardRatio = 2.0;
 input int ReferenceLineLengthBars = 40;
 input color ReferenceSLColor = LightCoral;
 input color ReferenceTPColor = LightBlue;
-input int ReferenceLineWidth = 1;
 input int ReferenceLineStyle = STYLE_DASH;
-input bool ShowReferenceEntryLine = false;
-input bool EnableSLTPDebugLog = false;
 
 double Ema20Buffer[];
 double Ema75Buffer[];
 double Ema200Buffer[];
 double BuyArrowBuffer[];
 double SellArrowBuffer[];
+double BuySLBuffer[];
+double BuyTPBuffer[];
+double SellSLBuffer[];
+double SellTPBuffer[];
 int H4TrendCache[];
 double H4SignalEma200Cache[];
 
@@ -83,20 +89,37 @@ int OnInit()
    SetIndexEmptyValue(4, EMPTY_VALUE);
    SetIndexLabel(4, "SELL");
 
+   SetIndexBuffer(5, BuySLBuffer);
+   SetIndexStyle(5, DRAW_LINE, ReferenceLineStyle, 1, ReferenceSLColor);
+   SetIndexEmptyValue(5, EMPTY_VALUE);
+   SetIndexLabel(5, "BUY SL");
+
+   SetIndexBuffer(6, BuyTPBuffer);
+   SetIndexStyle(6, DRAW_LINE, ReferenceLineStyle, 1, ReferenceTPColor);
+   SetIndexEmptyValue(6, EMPTY_VALUE);
+   SetIndexLabel(6, "BUY TP");
+
+   SetIndexBuffer(7, SellSLBuffer);
+   SetIndexStyle(7, DRAW_LINE, ReferenceLineStyle, 1, ReferenceSLColor);
+   SetIndexEmptyValue(7, EMPTY_VALUE);
+   SetIndexLabel(7, "SELL SL");
+
+   SetIndexBuffer(8, SellTPBuffer);
+   SetIndexStyle(8, DRAW_LINE, ReferenceLineStyle, 1, ReferenceTPColor);
+   SetIndexEmptyValue(8, EMPTY_VALUE);
+   SetIndexLabel(8, "SELL TP");
+
    ArraySetAsSeries(Ema20Buffer, true);
    ArraySetAsSeries(Ema75Buffer, true);
    ArraySetAsSeries(Ema200Buffer, true);
    ArraySetAsSeries(BuyArrowBuffer, true);
    ArraySetAsSeries(SellArrowBuffer, true);
-
-   DeleteReferenceLines();
+   ArraySetAsSeries(BuySLBuffer, true);
+   ArraySetAsSeries(BuyTPBuffer, true);
+   ArraySetAsSeries(SellSLBuffer, true);
+   ArraySetAsSeries(SellTPBuffer, true);
 
    return(INIT_SUCCEEDED);
-}
-
-void OnDeinit(const int reason)
-{
-   DeleteReferenceLines();
 }
 
 int OnCalculate(const int rates_total,
@@ -113,6 +136,7 @@ int OnCalculate(const int rates_total,
    int scanLimit;
    int lookback = MathMax(SlopeLookback, 1);
    int recalculateBars = MathMax(RecalculateBars, 1);
+
    if(prev_calculated == 0)
       scanLimit = MathMin(rates_total - 1, HistoricalBars);
    else
@@ -139,6 +163,16 @@ int OnCalculate(const int rates_total,
       Ema20Buffer[e] = iMA(NULL, 0, 20, 0, MODE_EMA, PRICE_CLOSE, e);
       Ema75Buffer[e] = iMA(NULL, 0, 75, 0, MODE_EMA, PRICE_CLOSE, e);
       Ema200Buffer[e] = iMA(NULL, 0, 200, 0, MODE_EMA, PRICE_CLOSE, e);
+   }
+
+   for(int c = scanLimit; c >= 0; c--)
+   {
+      BuyArrowBuffer[c] = EMPTY_VALUE;
+      SellArrowBuffer[c] = EMPTY_VALUE;
+      BuySLBuffer[c] = EMPTY_VALUE;
+      BuyTPBuffer[c] = EMPTY_VALUE;
+      SellSLBuffer[c] = EMPTY_VALUE;
+      SellTPBuffer[c] = EMPTY_VALUE;
    }
 
    int sourceH4Shift = -1;
@@ -185,12 +219,6 @@ int OnCalculate(const int rates_total,
    for(int i = scanLimit; i >= 1; i--)
    {
       double ema20 = Ema20Buffer[i];
-      double ema75 = Ema75Buffer[i];
-      double ema200 = Ema200Buffer[i];
-
-      BuyArrowBuffer[i] = EMPTY_VALUE;
-      SellArrowBuffer[i] = EMPTY_VALUE;
-
       bool h4Buy = (H4TrendCache[i] == 1);
       bool h4Sell = (H4TrendCache[i] == -1);
       double signalH4Ema200 = H4SignalEma200Cache[i];
@@ -206,7 +234,6 @@ int OnCalculate(const int rates_total,
       bool bearishCandle = IsBearishCandle(i);
       bool bullishEngulfing = (!EnableEngulfingFilter || IsBullishEngulfing(i));
       bool bearishEngulfing = (!EnableEngulfingFilter || IsBearishEngulfing(i));
-
       bool buyPullbackReset = (Close[i] > ema20 && Low[i] > ema20);
       bool sellPullbackReset = (Close[i] < ema20 && High[i] < ema20);
 
@@ -226,7 +253,7 @@ int OnCalculate(const int rates_total,
          bullishEngulfing)
       {
          BuyArrowBuffer[i] = Low[i] - 10 * Point;
-         UpdateReferenceSLTPLines(i, true);
+         DrawBuyReferenceBuffers(i);
          buySignalAlreadyShown = true;
          continue;
       }
@@ -241,13 +268,17 @@ int OnCalculate(const int rates_total,
          bearishEngulfing)
       {
          SellArrowBuffer[i] = High[i] + 10 * Point;
-         UpdateReferenceSLTPLines(i, false);
+         DrawSellReferenceBuffers(i);
          sellSignalAlreadyShown = true;
       }
    }
 
    BuyArrowBuffer[0] = EMPTY_VALUE;
    SellArrowBuffer[0] = EMPTY_VALUE;
+   BuySLBuffer[0] = EMPTY_VALUE;
+   BuyTPBuffer[0] = EMPTY_VALUE;
+   SellSLBuffer[0] = EMPTY_VALUE;
+   SellTPBuffer[0] = EMPTY_VALUE;
 
    return(rates_total);
 }
@@ -348,84 +379,93 @@ bool IsBearishEngulfing(int shift)
    return(currentBody >= previousBody * EngulfingBodyRatio);
 }
 
-double ZigZagTolerance()
+int GetSwingLookback()
 {
-   if(Digits == 3 || Digits == 5)
-      return(Point);
-   return(Point * 3.0);
+   return(MathMax(SwingLookback, 1));
 }
 
-double GetZigZagValue(int shift)
+bool IsSwingLow(int shift)
 {
-   return(iCustom(NULL,
-                  PERIOD_M15,
-                  "ZigZag",
-                  ZigZagDepth,
-                  ZigZagDeviation,
-                  ZigZagBackstep,
-                  0,
-                  shift));
-}
+   int lookback = GetSwingLookback();
+   if(shift - lookback < 1)
+      return(false);
+   if(shift + lookback >= Bars)
+      return(false);
 
-bool IsValidZigZagValue(double value)
-{
-   if(value == 0.0)
-      return(false);
-   if(value == EMPTY_VALUE)
-      return(false);
+   for(int k = 1; k <= lookback; k++)
+   {
+      if(Low[shift] >= Low[shift - k])
+         return(false);
+      if(Low[shift] >= Low[shift + k])
+         return(false);
+   }
+
    return(true);
 }
 
-bool FindPreviousConfirmedZigZagLow(int signalShift, int &pivotShift, double &pivotPrice)
+bool IsSwingHigh(int shift)
+{
+   int lookback = GetSwingLookback();
+   if(shift - lookback < 1)
+      return(false);
+   if(shift + lookback >= Bars)
+      return(false);
+
+   for(int k = 1; k <= lookback; k++)
+   {
+      if(High[shift] <= High[shift - k])
+         return(false);
+      if(High[shift] <= High[shift + k])
+         return(false);
+   }
+
+   return(true);
+}
+
+bool FindPreviousSwingLow(int signalShift, int &pivotShift, double &pivotPrice)
 {
    pivotShift = -1;
    pivotPrice = 0.0;
 
-   int startShift = signalShift + MathMax(ZigZagConfirmBars, 1);
-   int endShift = signalShift + MathMax(ZigZagSearchBars, startShift - signalShift);
-   int maxBars = Bars - 1;
-   endShift = MathMin(endShift, maxBars);
+   int lookback = GetSwingLookback();
+   int startShift = signalShift + lookback + 1;
+   int endShift = signalShift + MathMax(SwingSearchBars, lookback + 1);
+   endShift = MathMin(endShift, Bars - lookback - 1);
 
    for(int shift = startShift; shift <= endShift; shift++)
    {
-      double zz = GetZigZagValue(shift);
-      if(!IsValidZigZagValue(zz))
+      if(!IsSwingLow(shift))
          continue;
-      if(MathAbs(zz - Low[shift]) > ZigZagTolerance())
-         continue;
-      if(zz >= Close[signalShift])
+      if(Low[shift] >= Close[signalShift])
          continue;
 
       pivotShift = shift;
-      pivotPrice = zz;
+      pivotPrice = Low[shift];
       return(true);
    }
 
    return(false);
 }
 
-bool FindPreviousConfirmedZigZagHigh(int signalShift, int &pivotShift, double &pivotPrice)
+bool FindPreviousSwingHigh(int signalShift, int &pivotShift, double &pivotPrice)
 {
    pivotShift = -1;
    pivotPrice = 0.0;
 
-   int startShift = signalShift + MathMax(ZigZagConfirmBars, 1);
-   int endShift = signalShift + MathMax(ZigZagSearchBars, startShift - signalShift);
-   int maxBars = Bars - 1;
-   endShift = MathMin(endShift, maxBars);
+   int lookback = GetSwingLookback();
+   int startShift = signalShift + lookback + 1;
+   int endShift = signalShift + MathMax(SwingSearchBars, lookback + 1);
+   endShift = MathMin(endShift, Bars - lookback - 1);
 
    for(int shift = startShift; shift <= endShift; shift++)
    {
-      double zz = GetZigZagValue(shift);
-      if(!IsValidZigZagValue(zz))
+      if(!IsSwingHigh(shift))
          continue;
-      if(MathAbs(zz - High[shift]) > ZigZagTolerance())
-         continue;
-      if(zz <= Close[signalShift])
+      if(High[shift] <= Close[signalShift])
          continue;
 
       pivotShift = shift;
-      pivotPrice = zz;
+      pivotPrice = High[shift];
       return(true);
    }
 
@@ -441,7 +481,7 @@ bool CalculateBuyReferenceSLTP(int signalShift,
    double pivotPrice = 0.0;
 
    entryPrice = Close[signalShift];
-   if(!FindPreviousConfirmedZigZagLow(signalShift, pivotShift, pivotPrice))
+   if(!FindPreviousSwingLow(signalShift, pivotShift, pivotPrice))
       return(false);
 
    stopLoss = pivotPrice;
@@ -452,9 +492,6 @@ bool CalculateBuyReferenceSLTP(int signalShift,
    takeProfit = entryPrice + risk * RiskRewardRatio;
    if(takeProfit <= entryPrice)
       return(false);
-
-   if(EnableSLTPDebugLog)
-      PrintReferenceSLTPDebug("BUY", signalShift, pivotShift, entryPrice, stopLoss, risk, takeProfit);
 
    return(true);
 }
@@ -468,7 +505,7 @@ bool CalculateSellReferenceSLTP(int signalShift,
    double pivotPrice = 0.0;
 
    entryPrice = Close[signalShift];
-   if(!FindPreviousConfirmedZigZagHigh(signalShift, pivotShift, pivotPrice))
+   if(!FindPreviousSwingHigh(signalShift, pivotShift, pivotPrice))
       return(false);
 
    stopLoss = pivotPrice;
@@ -480,108 +517,49 @@ bool CalculateSellReferenceSLTP(int signalShift,
    if(takeProfit >= entryPrice)
       return(false);
 
-   if(EnableSLTPDebugLog)
-      PrintReferenceSLTPDebug("SELL", signalShift, pivotShift, entryPrice, stopLoss, risk, takeProfit);
-
    return(true);
 }
 
-string ReferenceObjectPrefix()
-{
-   return("M15_Alert_Indicator_FT_Reference_" + Symbol() + "_" + IntegerToString(Period()) + "_");
-}
-
-void DeleteReferenceLines()
-{
-   string prefix = ReferenceObjectPrefix();
-
-   for(int i = ObjectsTotal() - 1; i >= 0; i--)
-   {
-      string name = ObjectName(i);
-      if(StringFind(name, prefix) == 0)
-         ObjectDelete(name);
-   }
-}
-
-datetime ReferenceLineEndTime(int signalShift)
-{
-   int seconds = Period() * 60;
-   if(seconds <= 0)
-      seconds = 15 * 60;
-
-   return(Time[signalShift] + seconds * MathMax(ReferenceLineLengthBars, 1));
-}
-
-void DrawReferenceLine(string suffix,
-                       int signalShift,
-                       double price,
-                       color lineColor,
-                       string labelText)
-{
-   string name = ReferenceObjectPrefix() + suffix;
-   datetime startTime = Time[signalShift];
-   datetime endTime = ReferenceLineEndTime(signalShift);
-
-   ObjectDelete(name);
-   if(!ObjectCreate(name, OBJ_TREND, 0, startTime, price, endTime, price))
-      return;
-
-   ObjectSet(name, OBJPROP_COLOR, lineColor);
-   ObjectSet(name, OBJPROP_WIDTH, ReferenceLineWidth);
-   ObjectSet(name, OBJPROP_STYLE, ReferenceLineStyle);
-   ObjectSet(name, OBJPROP_RAY, false);
-   ObjectSetText(name, labelText, 8, "Arial", lineColor);
-}
-
-void UpdateReferenceSLTPLines(int signalShift, bool isBuy)
+void DrawBuyReferenceBuffers(int signalShift)
 {
    if(!EnableReferenceSLTP)
-   {
-      DeleteReferenceLines();
       return;
-   }
 
    double entryPrice = 0.0;
    double stopLoss = 0.0;
    double takeProfit = 0.0;
-   bool ok = false;
 
-   if(isBuy)
-      ok = CalculateBuyReferenceSLTP(signalShift, entryPrice, stopLoss, takeProfit);
-   else
-      ok = CalculateSellReferenceSLTP(signalShift, entryPrice, stopLoss, takeProfit);
-
-   DeleteReferenceLines();
-   if(!ok)
+   if(!CalculateBuyReferenceSLTP(signalShift, entryPrice, stopLoss, takeProfit))
       return;
 
-   DrawReferenceLine("SL", signalShift, stopLoss, ReferenceSLColor, "Reference SL");
-   DrawReferenceLine("TP", signalShift, takeProfit, ReferenceTPColor, "Reference TP RR 1:" + DoubleToString(RiskRewardRatio, 1));
+   int endShift = MathMax(signalShift - MathMax(ReferenceLineLengthBars, 1) + 1, 1);
 
-   if(ShowReferenceEntryLine)
-      DrawReferenceLine("ENTRY", signalShift, entryPrice, Silver, "Reference Entry");
+   for(int j = signalShift; j >= endShift; j--)
+   {
+      BuySLBuffer[j] = stopLoss;
+      BuyTPBuffer[j] = takeProfit;
+   }
 }
 
-void PrintReferenceSLTPDebug(string direction,
-                             int signalShift,
-                             int pivotShift,
-                             double entryPrice,
-                             double stopLoss,
-                             double risk,
-                             double takeProfit)
+void DrawSellReferenceBuffers(int signalShift)
 {
-   Print("Reference SLTP",
-         " direction=", direction,
-         " signalTime=", TimeToString(Time[signalShift], TIME_DATE | TIME_MINUTES),
-         " signalShift=", signalShift,
-         " entry=", DoubleToString(entryPrice, Digits),
-         " pivotShift=", pivotShift,
-         " pivotTime=", TimeToString(Time[pivotShift], TIME_DATE | TIME_MINUTES),
-         " pivotPrice=", DoubleToString(stopLoss, Digits),
-         " SL=", DoubleToString(stopLoss, Digits),
-         " risk=", DoubleToString(risk, Digits),
-         " TP=", DoubleToString(takeProfit, Digits),
-         " RR=", DoubleToString(RiskRewardRatio, 2));
+   if(!EnableReferenceSLTP)
+      return;
+
+   double entryPrice = 0.0;
+   double stopLoss = 0.0;
+   double takeProfit = 0.0;
+
+   if(!CalculateSellReferenceSLTP(signalShift, entryPrice, stopLoss, takeProfit))
+      return;
+
+   int endShift = MathMax(signalShift - MathMax(ReferenceLineLengthBars, 1) + 1, 1);
+
+   for(int j = signalShift; j >= endShift; j--)
+   {
+      SellSLBuffer[j] = stopLoss;
+      SellTPBuffer[j] = takeProfit;
+   }
 }
 
 int GetCachedH4Trend(int h4Shift, int h4Bars)
