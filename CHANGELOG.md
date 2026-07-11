@@ -1,5 +1,15 @@
 # Changelog
 
+## V1.3 FT compatibility revision - 2026-07-12
+
+- Removed chart object based SL/TP drawing.
+- Removed standard ZigZag iCustom dependency.
+- Added internal swing high/low detection.
+- Added SL/TP indicator buffers.
+- Preserved engulfing filter.
+- Preserved V1.2 entry logic.
+- Preserved incremental calculation.
+
 ## V1.3 - 2026-07-12
 
 - Added optional M15 bullish and bearish engulfing filters.
