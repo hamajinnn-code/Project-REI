@@ -14,7 +14,7 @@
 
 //+------------------------------------------------------------------+
 //| M15_Alert_Indicator                                               |
-//| V1.2: Practical filters for M15 pullback entries                  |
+//| V1.3: Engulfing filter and reference SL/TP lines                  |
 //| Drawing method: indicator buffers only                            |
 //+------------------------------------------------------------------+
 
@@ -49,6 +49,22 @@ input bool   EnableH4ReversalPatternFilter = false;
 input int    H4ReversalLookback = 10;
 input double PinbarWickRatio = 2.0;
 input double PinbarBodyMaxRatio = 0.35;
+input bool   EnableEngulfingFilter = true;
+input double EngulfingBodyRatio = 1.0;
+input bool   EnableReferenceSLTP = true;
+input int    ZigZagDepth = 12;
+input int    ZigZagDeviation = 5;
+input int    ZigZagBackstep = 3;
+input int    ZigZagSearchBars = 500;
+input int    ZigZagConfirmBars = 3;
+input double RiskRewardRatio = 2.0;
+input int    ReferenceLineLengthBars = 40;
+input color  ReferenceSLColor = clrLightCoral;
+input color  ReferenceTPColor = clrLightBlue;
+input int    ReferenceLineWidth = 1;
+input int    ReferenceLineStyle = STYLE_DASH;
+input bool   ShowReferenceEntryLine = false;
+input bool   EnableSLTPDebugLog = false;
 
 double BuyArrowBuffer[];
 double SellArrowBuffer[];
@@ -603,6 +619,7 @@ bool IsBuySignal(int shift)
    if(!IsM15BuySlopeUp(shift)) return(false);
    if(!IsBuyTouch20Or75EMA(shift)) return(false);
    if(!IsBullishCandle(shift)) return(false);
+   if(EnableEngulfingFilter && !IsBullishEngulfing(shift)) return(false);
    if(EnableLondonTimeFilter && !IsLondonSession(shift)) return(false);
    if(EnableNewsFilter && IsNewsAvoidTime(shift)) return(false);
    return(true);
@@ -617,9 +634,288 @@ bool IsSellSignal(int shift)
    if(!IsM15SellSlopeDown(shift)) return(false);
    if(!IsSellTouch20Or75EMA(shift)) return(false);
    if(!IsBearishCandle(shift)) return(false);
+   if(EnableEngulfingFilter && !IsBearishEngulfing(shift)) return(false);
    if(EnableLondonTimeFilter && !IsLondonSession(shift)) return(false);
    if(EnableNewsFilter && IsNewsAvoidTime(shift)) return(false);
    return(true);
+}
+
+bool IsBullishEngulfing(int shift)
+{
+   if(shift <= 0)
+      return(false);
+   if(shift + 1 >= Bars)
+      return(false);
+
+   if(Close[shift + 1] >= Open[shift + 1])
+      return(false);
+   if(Close[shift] <= Open[shift])
+      return(false);
+   if(Open[shift] > Close[shift + 1])
+      return(false);
+   if(Close[shift] < Open[shift + 1])
+      return(false);
+
+   double currentBody = MathAbs(Close[shift] - Open[shift]);
+   double previousBody = MathAbs(Close[shift + 1] - Open[shift + 1]);
+
+   return(currentBody >= previousBody * EngulfingBodyRatio);
+}
+
+bool IsBearishEngulfing(int shift)
+{
+   if(shift <= 0)
+      return(false);
+   if(shift + 1 >= Bars)
+      return(false);
+
+   if(Close[shift + 1] <= Open[shift + 1])
+      return(false);
+   if(Close[shift] >= Open[shift])
+      return(false);
+   if(Open[shift] < Close[shift + 1])
+      return(false);
+   if(Close[shift] > Open[shift + 1])
+      return(false);
+
+   double currentBody = MathAbs(Close[shift] - Open[shift]);
+   double previousBody = MathAbs(Close[shift + 1] - Open[shift + 1]);
+
+   return(currentBody >= previousBody * EngulfingBodyRatio);
+}
+
+double ZigZagTolerance()
+{
+   return(MathMax(Point * 3.0, PipPoint() * 0.1));
+}
+
+double GetZigZagValue(int shift)
+{
+   return(iCustom(NULL,
+                  PERIOD_M15,
+                  "ZigZag",
+                  ZigZagDepth,
+                  ZigZagDeviation,
+                  ZigZagBackstep,
+                  0,
+                  shift));
+}
+
+bool IsValidZigZagValue(double value)
+{
+   if(value == 0.0)
+      return(false);
+   if(value == EMPTY_VALUE)
+      return(false);
+   return(true);
+}
+
+bool FindPreviousConfirmedZigZagLow(int signalShift, int &pivotShift, double &pivotPrice)
+{
+   pivotShift = -1;
+   pivotPrice = 0.0;
+
+   int startShift = signalShift + MathMax(ZigZagConfirmBars, 1);
+   int endShift = signalShift + MathMax(ZigZagSearchBars, startShift - signalShift);
+   int maxBars = iBars(NULL, PERIOD_M15) - 1;
+   endShift = MathMin(endShift, maxBars);
+
+   for(int shift = startShift; shift <= endShift; shift++)
+   {
+      double zz = GetZigZagValue(shift);
+      if(!IsValidZigZagValue(zz))
+         continue;
+      if(MathAbs(zz - Low[shift]) > ZigZagTolerance())
+         continue;
+      if(zz >= Close[signalShift])
+         continue;
+
+      pivotShift = shift;
+      pivotPrice = zz;
+      return(true);
+   }
+
+   return(false);
+}
+
+bool FindPreviousConfirmedZigZagHigh(int signalShift, int &pivotShift, double &pivotPrice)
+{
+   pivotShift = -1;
+   pivotPrice = 0.0;
+
+   int startShift = signalShift + MathMax(ZigZagConfirmBars, 1);
+   int endShift = signalShift + MathMax(ZigZagSearchBars, startShift - signalShift);
+   int maxBars = iBars(NULL, PERIOD_M15) - 1;
+   endShift = MathMin(endShift, maxBars);
+
+   for(int shift = startShift; shift <= endShift; shift++)
+   {
+      double zz = GetZigZagValue(shift);
+      if(!IsValidZigZagValue(zz))
+         continue;
+      if(MathAbs(zz - High[shift]) > ZigZagTolerance())
+         continue;
+      if(zz <= Close[signalShift])
+         continue;
+
+      pivotShift = shift;
+      pivotPrice = zz;
+      return(true);
+   }
+
+   return(false);
+}
+
+bool CalculateBuyReferenceSLTP(int signalShift,
+                               double &entryPrice,
+                               double &stopLoss,
+                               double &takeProfit)
+{
+   int pivotShift = -1;
+   double pivotPrice = 0.0;
+
+   entryPrice = Close[signalShift];
+   if(!FindPreviousConfirmedZigZagLow(signalShift, pivotShift, pivotPrice))
+      return(false);
+
+   stopLoss = pivotPrice;
+   double risk = entryPrice - stopLoss;
+   if(stopLoss >= entryPrice || risk <= 0.0)
+      return(false);
+
+   takeProfit = entryPrice + risk * RiskRewardRatio;
+   if(takeProfit <= entryPrice)
+      return(false);
+
+   if(EnableSLTPDebugLog)
+      PrintReferenceSLTPDebug("BUY", signalShift, pivotShift, entryPrice, stopLoss, risk, takeProfit);
+
+   return(true);
+}
+
+bool CalculateSellReferenceSLTP(int signalShift,
+                                double &entryPrice,
+                                double &stopLoss,
+                                double &takeProfit)
+{
+   int pivotShift = -1;
+   double pivotPrice = 0.0;
+
+   entryPrice = Close[signalShift];
+   if(!FindPreviousConfirmedZigZagHigh(signalShift, pivotShift, pivotPrice))
+      return(false);
+
+   stopLoss = pivotPrice;
+   double risk = stopLoss - entryPrice;
+   if(stopLoss <= entryPrice || risk <= 0.0)
+      return(false);
+
+   takeProfit = entryPrice - risk * RiskRewardRatio;
+   if(takeProfit >= entryPrice)
+      return(false);
+
+   if(EnableSLTPDebugLog)
+      PrintReferenceSLTPDebug("SELL", signalShift, pivotShift, entryPrice, stopLoss, risk, takeProfit);
+
+   return(true);
+}
+
+string ReferenceObjectPrefix()
+{
+   return("M15_Alert_Indicator_Reference_" + Symbol() + "_" + IntegerToString(Period()) + "_");
+}
+
+void DeleteReferenceLines()
+{
+   string prefix = ReferenceObjectPrefix();
+
+   for(int i = ObjectsTotal(0, 0, -1) - 1; i >= 0; i--)
+   {
+      string name = ObjectName(0, i, 0, -1);
+      if(StringFind(name, prefix) == 0)
+         ObjectDelete(0, name);
+   }
+}
+
+datetime ReferenceLineEndTime(int signalShift)
+{
+   int seconds = PeriodSeconds(PERIOD_M15);
+   if(seconds <= 0)
+      seconds = 15 * 60;
+
+   return(Time[signalShift] + seconds * MathMax(ReferenceLineLengthBars, 1));
+}
+
+void DrawReferenceLine(string suffix,
+                       int signalShift,
+                       double price,
+                       color lineColor,
+                       string labelText)
+{
+   string name = ReferenceObjectPrefix() + suffix;
+   datetime startTime = Time[signalShift];
+   datetime endTime = ReferenceLineEndTime(signalShift);
+
+   ObjectDelete(0, name);
+   if(!ObjectCreate(0, name, OBJ_TREND, 0, startTime, price, endTime, price))
+      return;
+
+   ObjectSetInteger(0, name, OBJPROP_COLOR, lineColor);
+   ObjectSetInteger(0, name, OBJPROP_WIDTH, ReferenceLineWidth);
+   ObjectSetInteger(0, name, OBJPROP_STYLE, ReferenceLineStyle);
+   ObjectSetInteger(0, name, OBJPROP_RAY_RIGHT, false);
+   ObjectSetString(0, name, OBJPROP_TEXT, labelText);
+}
+
+void UpdateReferenceSLTPLines(int signalShift, bool isBuy)
+{
+   if(!EnableReferenceSLTP)
+   {
+      DeleteReferenceLines();
+      return;
+   }
+
+   double entryPrice = 0.0;
+   double stopLoss = 0.0;
+   double takeProfit = 0.0;
+   bool ok = false;
+
+   if(isBuy)
+      ok = CalculateBuyReferenceSLTP(signalShift, entryPrice, stopLoss, takeProfit);
+   else
+      ok = CalculateSellReferenceSLTP(signalShift, entryPrice, stopLoss, takeProfit);
+
+   DeleteReferenceLines();
+   if(!ok)
+      return;
+
+   DrawReferenceLine("SL", signalShift, stopLoss, ReferenceSLColor, "Reference SL");
+   DrawReferenceLine("TP", signalShift, takeProfit, ReferenceTPColor, "Reference TP RR 1:" + DoubleToString(RiskRewardRatio, 1));
+
+   if(ShowReferenceEntryLine)
+      DrawReferenceLine("ENTRY", signalShift, entryPrice, clrSilver, "Reference Entry");
+}
+
+void PrintReferenceSLTPDebug(string direction,
+                             int signalShift,
+                             int pivotShift,
+                             double entryPrice,
+                             double stopLoss,
+                             double risk,
+                             double takeProfit)
+{
+   Print("Reference SLTP",
+         " direction=", direction,
+         " signalTime=", TimeToString(Time[signalShift], TIME_DATE | TIME_MINUTES),
+         " signalShift=", signalShift,
+         " entry=", DoubleToString(entryPrice, Digits),
+         " pivotShift=", pivotShift,
+         " pivotTime=", TimeToString(Time[pivotShift], TIME_DATE | TIME_MINUTES),
+         " pivotPrice=", DoubleToString(stopLoss, Digits),
+         " SL=", DoubleToString(stopLoss, Digits),
+         " risk=", DoubleToString(risk, Digits),
+         " TP=", DoubleToString(takeProfit, Digits),
+         " RR=", DoubleToString(RiskRewardRatio, 2));
 }
 
 //+------------------------------------------------------------------+
@@ -752,6 +1048,7 @@ void UpdateArrowBuffers(int rates_total)
             BuyArrowBuffer[i] = Low[i] - arrowOffset;
             g_lastBuyArrowCount++;
             PrintBuyBufferDebug(i);
+            UpdateReferenceSLTPLines(i, true);
          }
 
          buySignalAlreadyShown = true;
@@ -766,6 +1063,7 @@ void UpdateArrowBuffers(int rates_total)
             SellArrowBuffer[i] = High[i] + arrowOffset;
             g_lastSellArrowCount++;
             PrintSellBufferDebug(i);
+            UpdateReferenceSLTPLines(i, false);
          }
 
          sellSignalAlreadyShown = true;
@@ -776,7 +1074,7 @@ void UpdateArrowBuffers(int rates_total)
    g_buySignalAlreadyShown = buySignalAlreadyShown;
    g_sellSignalAlreadyShown = sellSignalAlreadyShown;
 
-   // The current candle must never show an arrow in V1.2.
+   // The current candle must never show an arrow in V1.3.
    BuyArrowBuffer[0] = EMPTY_VALUE;
    SellArrowBuffer[0] = EMPTY_VALUE;
 }
@@ -807,7 +1105,7 @@ void UpdateDebugEMALines(int rates_total)
 
 void UpdateStatusComment()
 {
-   Comment("M15_Alert_Indicator V1.2 revised",
+   Comment("M15_Alert_Indicator V1.3",
            "\nHistoricalBars: ", HistoricalBars,
            "\nScanned bars: ", g_lastScannedBars,
            "\nBUY arrows: ", g_lastBuyArrowCount,
@@ -860,6 +1158,7 @@ void CheckCurrentAlert()
                    && IsM15BuySlopeUp(0)
                    && buyTouch
                    && currentPrice > openPrice
+                   && (!EnableEngulfingFilter || IsBullishEngulfing(0))
                    && (!EnableLondonTimeFilter || IsLondonSession(0))
                    && (!EnableNewsFilter || !IsNewsAvoidTime(0));
 
@@ -869,6 +1168,7 @@ void CheckCurrentAlert()
                     && IsM15SellSlopeDown(0)
                     && sellTouch
                     && currentPrice < openPrice
+                    && (!EnableEngulfingFilter || IsBearishEngulfing(0))
                     && (!EnableLondonTimeFilter || IsLondonSession(0))
                     && (!EnableNewsFilter || !IsNewsAvoidTime(0));
 
@@ -906,7 +1206,7 @@ void CheckCurrentAlert()
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   IndicatorShortName("M15 Alert Indicator V1.2 revised");
+   IndicatorShortName("M15 Alert Indicator V1.3");
 
    SetIndexBuffer(0, BuyArrowBuffer);
    SetIndexBuffer(1, SellArrowBuffer);
@@ -938,10 +1238,11 @@ int OnInit()
    SetIndexLabel(3, "Debug 75EMA");
    SetIndexLabel(4, "Debug 200EMA");
 
-   Print("M15_Alert_Indicator V1.2 revised loaded");
+   Print("M15_Alert_Indicator V1.3 loaded");
    UpdateStatusComment();
 
    DeleteLegacyArrowObjects();
+   DeleteReferenceLines();
 
    return(INIT_SUCCEEDED);
 }
@@ -959,7 +1260,7 @@ int OnCalculate(const int rates_total,
 {
    if(Period() != PERIOD_M15)
    {
-      Comment("M15_Alert_Indicator V1.2 revised",
+      Comment("M15_Alert_Indicator V1.3",
               "\nPlease attach this indicator to an M15 chart.");
       return(rates_total);
    }
@@ -974,5 +1275,6 @@ int OnCalculate(const int rates_total,
 
 void OnDeinit(const int reason)
 {
+   DeleteReferenceLines();
    Comment("");
 }
