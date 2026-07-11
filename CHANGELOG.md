@@ -1,5 +1,12 @@
 # Changelog
 
+## V1.2.3 - 2026-07-11
+
+- Added signal-time price position check against H4 200EMA.
+- Preserved confirmed H4 trend filter.
+- Prevented BUY signals below H4 200EMA and SELL signals above H4 200EMA.
+- No other logic changes.
+
 ## V1.2.2 - 2026-07-10
 
 - Added incremental recalculation for Forex Tester.
