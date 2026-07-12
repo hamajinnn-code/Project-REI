@@ -1,5 +1,9 @@
 # Changelog
 
+## Documentation - 2026-07-13
+
+- Added Version 1.3 Specification Document.
+
 ## Forex Tester H4 filter - 2026-07-10
 
 Forex Tester version:
