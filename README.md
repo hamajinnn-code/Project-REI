@@ -62,6 +62,12 @@ Removed from core signal conditions:
 - The indicator scans old candles to new candles so pullback state is handled correctly.
 - Chart `Comment()` displays `HistoricalBars`, scanned bars, BUY arrows, and SELL arrows.
 
+## Development Documentation
+
+Project REI keeps version-specific development documents in `docs/Specifications/`.
+
+- Version 1.3 specification: `docs/Specifications/V1.3.md`
+
 ## Branch Strategy
 
 `main` is reserved for stable releases. The current stable baseline is `M15_Alert_Indicator` V1.2 revised.
