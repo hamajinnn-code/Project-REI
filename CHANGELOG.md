@@ -188,3 +188,9 @@ Added Forex Tester display verification indicator:
 - Prevented repeated reference object recreation
 - Disabled signal debug logs by default
 - Preserved all V1.3 trading logic
+## V1.3 EMA touch revision
+
+- Changed pullback touch condition from 20EMA or 75EMA to 75EMA only.
+- Excluded shallow 20EMA rebounds from BUY and SELL signal candidates.
+- Applied the same 75EMA-only touch rule to current-candle alerts.
+- Preserved EMA alignment, EMA slope, engulfing filter, London/news filters, reference SL/TP, ZigZag, RR 1:2, arrow drawing, and performance optimization logic.
