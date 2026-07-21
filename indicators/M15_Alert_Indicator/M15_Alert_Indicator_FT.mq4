@@ -228,8 +228,8 @@ int OnCalculate(const int rates_total,
       bool sellAlignment = IsSellAlignment(i);
       bool buySlopeUp = IsBuySlopeUp(i, rates_total);
       bool sellSlopeDown = IsSellSlopeDown(i, rates_total);
-      bool buyTouch = IsBuyTouch20Or75EMA(i);
-      bool sellTouch = IsSellTouch20Or75EMA(i);
+      bool buyTouch = IsBuyTouch75EMA(i);
+      bool sellTouch = IsSellTouch75EMA(i);
       bool bullishCandle = IsBullishCandle(i);
       bool bearishCandle = IsBearishCandle(i);
       bool bullishEngulfing = (!EnableEngulfingFilter || IsBullishEngulfing(i));
@@ -315,16 +315,16 @@ bool IsSellSlopeDown(int shift, int rates_total)
           Ema75Buffer[shift] < Ema75Buffer[shift + lookback]);
 }
 
-bool IsBuyTouch20Or75EMA(int shift)
+bool IsBuyTouch75EMA(int shift)
 {
-   return((Low[shift] <= Ema20Buffer[shift] && Close[shift] >= Ema20Buffer[shift]) ||
-          (Low[shift] <= Ema75Buffer[shift] && Close[shift] >= Ema75Buffer[shift]));
+   return(Low[shift] <= Ema75Buffer[shift] &&
+          Close[shift] >= Ema75Buffer[shift]);
 }
 
-bool IsSellTouch20Or75EMA(int shift)
+bool IsSellTouch75EMA(int shift)
 {
-   return((High[shift] >= Ema20Buffer[shift] && Close[shift] <= Ema20Buffer[shift]) ||
-          (High[shift] >= Ema75Buffer[shift] && Close[shift] <= Ema75Buffer[shift]));
+   return(High[shift] >= Ema75Buffer[shift] &&
+          Close[shift] <= Ema75Buffer[shift]);
 }
 
 bool IsBullishCandle(int shift)
