@@ -344,8 +344,19 @@ int OnCalculate(const int rates_total,
       g_lines[stateIndex].enabled = false;
       SaveState(stateIndex);
       UpdateButton(stateIndex);
-      Alert(Symbol(),
-            " | ", TimeframeText(), " | ", lineName, " | ", direction);
+      // Use exactly the same message for the local alert and mobile push.
+      string message = Symbol() + " | " + TimeframeText() + " | " + lineName
+                       + " | " + direction;
+      Alert(message);
+      // One attempt per break, with no retries. Failure must not re-arm the line
+      // or interrupt monitoring. MT4 notification settings/rate limits apply.
+      ResetLastError();
+      if(!SendNotification(message))
+      {
+         int pushError = GetLastError();
+         Print("REI LBA: SendNotification failed | error=", pushError,
+               " | ", message);
+      }
       ChartRedraw();
    }
 
