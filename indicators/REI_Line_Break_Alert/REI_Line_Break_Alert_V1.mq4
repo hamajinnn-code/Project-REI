@@ -93,8 +93,35 @@ int FindLine(const string name)
 
 bool IsPriceLine(const string name)
 {
-   return(ObjectFind(0, name) == 0 &&
-          ObjectGetInteger(0, name, OBJPROP_TYPE) == OBJ_HLINE);
+   if(ObjectFind(0, name) != 0) return(false);
+   long type = ObjectGetInteger(0, name, OBJPROP_TYPE);
+   return(type == OBJ_HLINE || type == OBJ_TREND);
+}
+
+bool TrendBounds(const string name, datetime &left, datetime &right, bool &ray)
+{
+   long first = 0, second = 0, rayValue = 0;
+   if(!ObjectGetInteger(0, name, OBJPROP_TIME, 0, first) ||
+      !ObjectGetInteger(0, name, OBJPROP_TIME, 1, second) ||
+      !ObjectGetInteger(0, name, OBJPROP_RAY_RIGHT, 0, rayValue)) return(false);
+   if(first <= 0 || second <= 0 || first == second) return(false);
+   left = (datetime)(first < second ? first : second);
+   right = (datetime)(first > second ? first : second);
+   ray = (rayValue != 0);
+   return(true);
+}
+
+bool TrendPriceAt(const string name, const datetime barTime, double &price)
+{
+   datetime left = 0, right = 0;
+   bool ray = false;
+   if(!TrendBounds(name, left, right, ray)) return(false);
+   // Respect the drawn segment: no left extrapolation; right extension only
+   // when Ray Right is enabled. Reject vertical/invalid anchor pairs above.
+   if(barTime < left || (!ray && barTime > right)) return(false);
+   ResetLastError();
+   price = ObjectGetValueByTime(0, name, barTime, 0);
+   return(GetLastError() == 0 && MathIsValidNumber(price));
 }
 
 // Hash keeps even a 63-character source name within MT4's name limit.
@@ -162,13 +189,43 @@ void UpdateButton(const int index)
    int x = 0, y = 0;
    int width = (int)ChartGetInteger(0, CHART_WIDTH_IN_PIXELS, 0);
    int height = (int)ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS, 0);
+   bool trend = ObjectGetInteger(0, g_lines[index].lineName, OBJPROP_TYPE) == OBJ_TREND;
    bool visible = ObjectGetDouble(0, g_lines[index].lineName, OBJPROP_PRICE, 0, price)
                   && ChartTimePriceToXY(0, 0, iTime(NULL, 0, 0), price, x, y)
                   && y >= 0 && y < height && width >= 60;
-   // Off-screen lines keep their state; hide their buttons until visible again.
-   ObjectSetInteger(0, name, OBJPROP_TIMEFRAMES, visible ? OBJ_ALL_PERIODS : OBJ_NO_PERIODS);
-   if(!visible) return;
-   x = width - 60;
+   if(trend)
+   {
+      // Place the control on the visible right part of the trend, or its end.
+      // This time is for UI positioning only, never for historical break tests.
+      datetime anchor = 0, left = 0, right = 0;
+      bool ray = false;
+      int window = 0;
+      double unusedPrice = 0;
+      visible = width >= 60 && height >= 18 &&
+                ChartXYToTimePrice(0, width - 60, height / 2, window, anchor, unusedPrice)
+                && window == 0 && TrendBounds(g_lines[index].lineName, left, right, ray);
+      if(visible)
+      {
+         if(!ray && anchor > right) anchor = right;
+         if(anchor < left) anchor = left;
+         visible = TrendPriceAt(g_lines[index].lineName, anchor, price)
+                   && ChartTimePriceToXY(0, 0, anchor, price, x, y)
+                   && x >= 0 && x < width && y >= 0 && y < height;
+      }
+   }
+   // Copy the source mask on every update, including later property edits.
+   // Keep the exact mask even off-screen; hide by position instead of changing it.
+   long sourceTimeframes = OBJ_NO_PERIODS;
+   if(!ObjectGetInteger(0, g_lines[index].lineName, OBJPROP_TIMEFRAMES, 0, sourceTimeframes))
+      sourceTimeframes = OBJ_NO_PERIODS;
+   ObjectSetInteger(0, name, OBJPROP_TIMEFRAMES, sourceTimeframes);
+   if(!visible)
+   {
+      ObjectSetInteger(0, name, OBJPROP_XDISTANCE, width + 42);
+      ObjectSetInteger(0, name, OBJPROP_YDISTANCE, height + 18);
+      return;
+   }
+   x = trend ? (int)MathMax(0, MathMin(width - 60, x)) : width - 60;
    y = (int)MathMax(0, MathMin(height - 18, y - 9));
    // Keep nearby lines at their price height, staggering buttons to the left.
    for(int attempt = 0; attempt < index; attempt++)
@@ -195,11 +252,11 @@ void SyncLines()
    for(int i = ArraySize(g_lines) - 1; i >= 0; i--)
       if(!IsPriceLine(g_lines[i].lineName)) RemoveLine(i, true);
 
-   int count = ObjectsTotal(0, 0, OBJ_HLINE);
+   int count = ObjectsTotal(0, 0, -1);
    for(int i = 0; i < count; i++)
    {
-      string name = ObjectName(0, i, 0, OBJ_HLINE);
-      if(name == "" || FindLine(name) >= 0) continue;
+      string name = ObjectName(0, i, 0, -1);
+      if(name == "" || !IsPriceLine(name) || FindLine(name) >= 0) continue;
       int index = ArraySize(g_lines);
       if(ArrayResize(g_lines, index + 1) != index + 1) continue;
       g_lines[index].lineName = name;
@@ -315,27 +372,39 @@ int OnCalculate(const int rates_total,
 
    g_lastProcessedClosedBar = closedBarTime;
 
-   // Only price-chart horizontal lines: exclude oscillator subwindows.
-   // All OBJ_HLINE objects qualify; there is no manual-creator flag filter.
-   int lineCount = ObjectsTotal(0, 0, OBJ_HLINE);
+   // Only price-chart HLINE/TREND objects; source objects are read-only.
+   // All objects of these types qualify (there is no manual-creator filter).
+   int lineCount = ArraySize(g_lines);
    for(int index = 0; index < lineCount; index++)
    {
-      string lineName = ObjectName(0, index, 0, OBJ_HLINE);
-      if(lineName == "")
+      string lineName = g_lines[index].lineName;
+      if(!IsPriceLine(lineName))
          continue;
 
       int stateIndex = FindLine(lineName);
       if(stateIndex < 0 || !g_lines[stateIndex].enabled)
          continue;
 
-      double linePrice = 0.0;
-      if(!ObjectGetDouble(0, lineName, OBJPROP_PRICE, 0, linePrice))
-         continue;
-
-      // Equality on the older close is allowed; the newer close must pass
-      // strictly beyond the line. High/Low and the forming candle are unused.
-      bool crossedUp = (close[2] <= linePrice && close[1] > linePrice);
-      bool crossedDown = (close[2] >= linePrice && close[1] < linePrice);
+      bool crossedUp = false, crossedDown = false;
+      if(ObjectGetInteger(0, lineName, OBJPROP_TYPE) == OBJ_HLINE)
+      {
+         // Preserve the original horizontal-line close-break conditions.
+         double linePrice = 0.0;
+         if(!ObjectGetDouble(0, lineName, OBJPROP_PRICE, 0, linePrice)) continue;
+         crossedUp = (close[2] <= linePrice && close[1] > linePrice);
+         crossedDown = (close[2] >= linePrice && close[1] < linePrice);
+      }
+      else
+      {
+         // MT4 plots each candle at its opening timestamp. Compare each CLOSED
+         // candle's close against the trend at that candle's own chart timestamp.
+         // Never substitute TimeCurrent(), time[0], or a single price for both.
+         double previousLinePrice = 0.0, latestLinePrice = 0.0;
+         if(!TrendPriceAt(lineName, time[2], previousLinePrice) ||
+            !TrendPriceAt(lineName, time[1], latestLinePrice)) continue;
+         crossedUp = (close[2] <= previousLinePrice && close[1] > latestLinePrice);
+         crossedDown = (close[2] >= previousLinePrice && close[1] < latestLinePrice);
+      }
       if(!crossedUp && !crossedDown)
          continue;
 
