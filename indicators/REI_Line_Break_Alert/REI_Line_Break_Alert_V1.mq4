@@ -7,6 +7,74 @@
 #property strict
 #property indicator_chart_window
 #property version "1.00"
+#property indicator_buffers 5
+
+// Display-only buffers. Never read these in line monitoring or notifications.
+double g_ema20[], g_ema75[], g_ema200[], g_ema800[], g_ema3200[];
+
+bool SetupEMA(const int index, double &buffer[], const int period,
+              const color lineColor, const int style, const bool visible)
+{
+   if(!SetIndexBuffer(index, buffer, INDICATOR_DATA)) return(false);
+   ArraySetAsSeries(buffer, true);
+   SetIndexStyle(index, visible ? DRAW_LINE : DRAW_NONE, style, 1, lineColor);
+   SetIndexEmptyValue(index, EMPTY_VALUE);
+   SetIndexDrawBegin(index, period - 1);
+   SetIndexShift(index, 0);
+   if(visible) SetIndexLabel(index, "EMA" + IntegerToString(period));
+   else SetIndexLabel(index, NULL);
+   return(true);
+}
+
+bool InitEMADisplay()
+{
+   bool m15 = (Period() == PERIOD_M15);
+   IndicatorDigits(Digits);
+   return(SetupEMA(0, g_ema20, 20, clrBlue, STYLE_SOLID, true) &&
+          SetupEMA(1, g_ema75, 75, clrYellow, STYLE_SOLID, true) &&
+          SetupEMA(2, g_ema200, 200, clrWhite, STYLE_SOLID, true) &&
+          SetupEMA(3, g_ema800, 800, clrYellow, STYLE_DASH, m15) &&
+          SetupEMA(4, g_ema3200, 3200, clrRed, STYLE_DOT, m15));
+}
+
+void UpdateEMA(double &buffer[], const int period, const bool visible,
+               const int rates_total, const int prev_calculated)
+{
+   bool full = (prev_calculated <= 0 || prev_calculated > rates_total);
+   if(full) ArrayInitialize(buffer, EMPTY_VALUE);
+   if(!visible) return;
+
+   // For shift s, at least 'period' bars at s and OLDER must be available.
+   // Leave the warm-up region empty, including after a chart history limit rolls.
+   int oldestValid = rates_total - period;
+   for(int s = (int)MathMax(0, oldestValid + 1); s < rates_total; s++)
+      buffer[s] = EMPTY_VALUE;
+   if(oldestValid < 0) return;
+
+   // Recalculate the current bar and at least the last closed bar. A terminal
+   // history reload resets prev_calculated and rebuilds the complete display.
+   int start = full ? oldestValid : (int)MathMin(oldestValid,
+                                               (int)MathMax(1, rates_total - prev_calculated));
+   for(int s = start; s >= 0; s--)
+   {
+      ResetLastError();
+      double value = iMA(NULL, 0, period, 0, MODE_EMA, PRICE_CLOSE, s);
+      int error = GetLastError();
+      buffer[s] = (error == 0 && MathIsValidNumber(value)) ? value : EMPTY_VALUE;
+   }
+}
+
+void UpdateEMADisplay(const int rates_total, const int prev_calculated)
+{
+   if(rates_total <= 0) return;
+   UpdateEMA(g_ema20, 20, true, rates_total, prev_calculated);
+   UpdateEMA(g_ema75, 75, true, rates_total, prev_calculated);
+   UpdateEMA(g_ema200, 200, true, rates_total, prev_calculated);
+   // These are M15 long-period EMAs, not multi-timeframe H1/H4 iMA calls.
+   bool m15 = (Period() == PERIOD_M15);
+   UpdateEMA(g_ema800, 800, m15, rates_total, prev_calculated);
+   UpdateEMA(g_ema3200, 3200, m15, rates_total, prev_calculated);
+}
 
 // One scan per closed candle prevents duplicate alerts for every line.
 // State belongs to this indicator instance; source lines are never modified.
@@ -328,6 +396,7 @@ string TimeframeText()
 int OnInit()
 {
    IndicatorShortName("Project REI Line Break Alert V1");
+   if(!InitEMADisplay()) return(INIT_FAILED);
    g_lastProcessedClosedBar = 0;
    // SyncLines restores persisted state before creating buttons or scanning prices.
    ArrayResize(g_lines, 0);
@@ -348,6 +417,7 @@ int OnCalculate(const int rates_total,
                 const long &volume[],
                 const int &spread[])
 {
+   UpdateEMADisplay(rates_total, prev_calculated);
    SyncLines();
    // Index 0 is forming; indices 1 and 2 must both be available.
    if(rates_total < 3)
