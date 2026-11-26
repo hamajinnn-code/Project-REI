@@ -481,7 +481,6 @@ void OnTimer()
    // Detect new/deleted lines even without market ticks. No shared chart flags.
    SyncLines();
    UpdatePanel();
-   UpdatePanel();
    ChartRedraw();
 }
 
