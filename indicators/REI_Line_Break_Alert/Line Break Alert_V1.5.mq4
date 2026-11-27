@@ -219,21 +219,20 @@ string PanelName(const string suffix) { return(g_panelPrefix + suffix); }
 // The original panel was too close to the right edge (16px).
 // Keep all panel widgets in the same local coordinate system, shifting
 // the entire group away from the price axis and Easyorder buttons.
-int PanelXOffset()
+int PanelLeft()
 {
    int width = (int)ChartGetInteger(0, CHART_WIDTH_IN_PIXELS, 0);
-   int right = (int)MathMax(16, PanelRightMargin);
-   if(width > 410) right = (int)MathMin(right, width - 398);
-   return(right - 16);
+   int rightMargin = (int)MathMax(8, PanelRightMargin);
+   return((int)MathMax(0, width - rightMargin - 382));
 }
-int PanelYOffset()
+int PanelTop()
 {
-   return((int)MathMax(17, PanelTopMargin) - 17);
+   return((int)MathMax(17, PanelTopMargin));
 }
 int EffectivePanelRows()
 {
    int height = (int)ChartGetInteger(0, CHART_HEIGHT_IN_PIXELS, 0);
-   int usable = (height - 17 - PanelYOffset() - 116) / 26;
+   int usable = (height - PanelTop() - 116) / 26;
    return((int)MathMax(1, MathMin(g_panelRows, usable)));
 }
 
@@ -308,7 +307,7 @@ bool CreatePanelObject(const string suffix, const ENUM_OBJECT type)
       Print("REI LBA: panel create failed: ", name, " error=", GetLastError());
       return(false);
    }
-   ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_RIGHT_UPPER);
+   ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
    ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
    ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
    ObjectSetInteger(0, name, OBJPROP_BACK, false);
@@ -322,8 +321,8 @@ void PanelButton(const string key, const string caption, const int right,
 {
    if(!CreatePanelObject(key, OBJ_BUTTON)) return;
    string name = PanelName(key);
-   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, right + PanelXOffset());
-   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, top + PanelYOffset());
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, PanelLeft() + 382 - right - width);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, PanelTop() + top - 17);
    ObjectSetInteger(0, name, OBJPROP_XSIZE, width);
    ObjectSetInteger(0, name, OBJPROP_YSIZE, 22);
    ObjectSetInteger(0, name, OBJPROP_COLOR, clrWhite);
@@ -342,8 +341,8 @@ void PanelLabel(const string key, const string caption, const int right,
 {
    if(!CreatePanelObject(key, OBJ_LABEL)) return;
    string name = PanelName(key);
-   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, right + PanelXOffset());
-   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, top + PanelYOffset());
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, PanelLeft() + 382 - right);
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, PanelTop() + top - 17);
    ObjectSetInteger(0, name, OBJPROP_ANCHOR, ANCHOR_RIGHT_UPPER);
    ObjectSetInteger(0, name, OBJPROP_COLOR, clrWhite);
    ObjectSetInteger(0, name, OBJPROP_FONTSIZE, fontSize);
@@ -361,12 +360,9 @@ void PanelBackground(const int rows)
    // the object corner is RIGHT_UPPER. Buttons instead extend to the LEFT
    // from the right edge. Use LEFT_UPPER for the frame and calculate its
    // left edge explicitly to make both use the exact same screen rectangle.
-   int width = (int)ChartGetInteger(0, CHART_WIDTH_IN_PIXELS, 0);
-   int right = 16 + PanelXOffset();
-   int left = width - right - 382;
    ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
-   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, (int)MathMax(0, left));
-   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, 47 + PanelYOffset());
+   ObjectSetInteger(0, name, OBJPROP_XDISTANCE, PanelLeft());
+   ObjectSetInteger(0, name, OBJPROP_YDISTANCE, PanelTop() + 30);
    ObjectSetInteger(0, name, OBJPROP_XSIZE, 382);
    ObjectSetInteger(0, name, OBJPROP_YSIZE, 60 + 26 * rows);
    ObjectSetInteger(0, name, OBJPROP_BGCOLOR, clrBlack);
